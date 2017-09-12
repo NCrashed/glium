@@ -108,10 +108,16 @@ macro_rules! implement_vertex {
                         (
                             Cow::Borrowed(stringify!($field_name)),
                             {
-                                let dummy: &$struct_name = unsafe { ::std::mem::transmute(0usize) };
-                                let dummy_field = &dummy.$field_name;
-                                let dummy_field: usize = unsafe { ::std::mem::transmute(dummy_field) };
-                                dummy_field
+                                // calculate the offset of the struct fields
+                                let dummy: $struct_name = unsafe { ::std::mem::uninitialized() };
+                                let offset: usize = {
+                                    let dummy_ref = &dummy;
+                                    let field_ref = &dummy.$field_name;
+                                    (field_ref as *const _ as usize) - (dummy_ref as *const _ as usize)
+                                };
+                                // NOTE: `glium::vertex::Vertex` requires `$struct_name` to have `Copy` trait
+                                // `Copy` excludes `Drop`, so we don't have to `std::mem::forget(dummy)`
+                                offset
                             },
                             {
                                 fn attr_type_of_val<T: $crate::vertex::Attribute>(_: &T)
@@ -355,7 +361,7 @@ macro_rules! implement_uniform_block {
                             };
 
                             let dummy: &$struct_name = unsafe { mem::uninitialized() };
-                            
+
                             match matches_from_ty(&dummy.$field_name, reflected_ty, input_offset) {
                                 Ok(_) => (),
                                 Err(e) => return Err(LayoutMismatchError::MemberMismatch {
