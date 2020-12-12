@@ -35,7 +35,7 @@ unstable = [] # used for benchmarks
 test_headless = []  # used for testing headless display
 
 [dependencies.glutin]
-version = "0.26"
+git = "https://github.com/Kaiser1989/glutin"
 features = []
 optional = true
 
