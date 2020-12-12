@@ -5,28 +5,24 @@ This private module handles the various image formats in OpenGL.
 use std::fmt;
 use std::error::Error;
 
-use gl;
-use context::Context;
+use crate::gl;
+use crate::context::Context;
 
-use CapabilitiesSource;
-use ToGlEnum;
-use version::{Api, Version};
+use crate::CapabilitiesSource;
+use crate::ToGlEnum;
+use crate::version::{Api, Version};
 
 /// Error that is returned if the format is not supported by OpenGL.
 #[derive(Copy, Clone, Debug)]
 pub struct FormatNotSupportedError;
 
 impl fmt::Display for FormatNotSupportedError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.description())
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "Format is not supported by OpenGL")
     }
 }
 
-impl Error for FormatNotSupportedError {
-    fn description(&self) -> &str {
-        "Format is not supported by OpenGL"
-    }
-}
+impl Error for FormatNotSupportedError {}
 
 /// Texture format request.
 #[derive(Copy, Clone, Debug)]
@@ -1646,7 +1642,7 @@ pub fn format_request_to_glenum(context: &Context, format: TextureFormatRequest,
                                 rq_ty: RequestType)
                                 -> Result<gl::types::GLenum, FormatNotSupportedError>
 {
-    let version = context.get_version();
+    let version = context.get_opengl_version();
     let extensions = context.get_extensions();
 
     let is_client_compressed = match rq_ty.get_client_format() {
@@ -1745,7 +1741,7 @@ pub fn format_request_to_glenum(context: &Context, format: TextureFormatRequest,
                 Some(ClientFormatAny::CompressedFormat(format)) => format,
                 _ => unreachable!(),
             });
-            try!(format_request_to_glenum(context, TextureFormatRequest::Specific(newformat), rq_ty))
+            format_request_to_glenum(context, TextureFormatRequest::Specific(newformat), rq_ty)?
         },
 
         TextureFormatRequest::AnyCompressed => {
@@ -1805,7 +1801,7 @@ pub fn format_request_to_glenum(context: &Context, format: TextureFormatRequest,
                extensions.gl_ext_texture_srgb
             {
                 match size {
-                    Some(1 ... 3) => gl::SRGB8,
+                    Some(1 ..= 3) => gl::SRGB8,
                     Some(4) => gl::SRGB8_ALPHA8,
                     None => if let RequestType::TexImage(_) = rq_ty { gl::SRGB8 } else { gl::SRGB8_ALPHA8 },
                     _ => unreachable!(),
@@ -1813,8 +1809,8 @@ pub fn format_request_to_glenum(context: &Context, format: TextureFormatRequest,
 
             } else {
                 // no support for sRGB
-                try!(format_request_to_glenum(context, TextureFormatRequest::AnyFloatingPoint,
-                                              rq_ty))
+                format_request_to_glenum(context, TextureFormatRequest::AnyFloatingPoint,
+                                              rq_ty)?
             }
         },
 
@@ -1834,7 +1830,7 @@ pub fn format_request_to_glenum(context: &Context, format: TextureFormatRequest,
                 Some(ClientFormatAny::CompressedSrgbFormat(format)) => format,
                 _ => unreachable!(),
             });
-            try!(format_request_to_glenum(context, TextureFormatRequest::Specific(newformat), rq_ty))
+            format_request_to_glenum(context, TextureFormatRequest::Specific(newformat), rq_ty)?
         },
 
         TextureFormatRequest::AnyCompressedSrgb => {
@@ -1842,7 +1838,7 @@ pub fn format_request_to_glenum(context: &Context, format: TextureFormatRequest,
                 match rq_ty {
                     RequestType::TexImage(client) => {
                         match client.map(|c| c.get_num_components()) {
-                            Some(1 ... 3) => gl::COMPRESSED_SRGB,
+                            Some(1 ..= 3) => gl::COMPRESSED_SRGB,
                             Some(4) => gl::COMPRESSED_SRGB_ALPHA,
                             None => gl::COMPRESSED_SRGB_ALPHA,
                             _ => unreachable!(),
@@ -1855,7 +1851,7 @@ pub fn format_request_to_glenum(context: &Context, format: TextureFormatRequest,
 
             } else {
                 // no support for compressed srgb textures
-                try!(format_request_to_glenum(context, TextureFormatRequest::AnySrgb, rq_ty))
+                format_request_to_glenum(context, TextureFormatRequest::AnySrgb, rq_ty)?
             }
         },
 

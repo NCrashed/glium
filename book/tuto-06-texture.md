@@ -21,9 +21,9 @@ In order to load the image, we just need to use `image::load`:
 ```rust
 use std::io::Cursor;
 let image = image::load(Cursor::new(&include_bytes!("/path/to/image.png")[..]),
-                        image::PNG).unwrap().to_rgba();
+                        image::ImageFormat::Png).unwrap().to_rgba8();
 let image_dimensions = image.dimensions();
-let image = glium::texture::RawImage2d::from_raw_rgba_reversed(image.into_raw(), image_dimensions);
+let image = glium::texture::RawImage2d::from_raw_rgba_reversed(&image.into_raw(), image_dimensions);
 ```
 
 And in order to upload the image as a texture, it's as simple as:
@@ -109,4 +109,4 @@ And here is the result:
 
 ![The result](tuto-06-texture.png)
 
-**[You can find the entire source code here](https://github.com/tomaka/glium/blob/master/examples/tutorial-06.rs).**
+**[You can find the entire source code here](https://github.com/glium/glium/blob/master/examples/tutorial-06.rs).**

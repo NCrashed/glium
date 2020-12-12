@@ -47,7 +47,7 @@ We need to change three things:
 The first step consists in changing the context building code:
 
 ```rust
-let context = glutin::ContextBuilder::new().with_depth_buffer(24);
+let cb = glutin::ContextBuilder::new().with_depth_buffer(24);
 ```
 
 We ask for the system to allocate a 24 bits depth buffer. 24 bits is a very common value that
@@ -106,4 +106,4 @@ represented as shades of gray. Here is our depth buffer after drawing the teapot
 
 ![Depth buffer](tuto-09-depth.png)
 
-**[You can find the entire source code here](https://github.com/tomaka/glium/blob/master/examples/tutorial-09.rs).**
+**[You can find the entire source code here](https://github.com/glium/glium/blob/master/examples/tutorial-09.rs).**

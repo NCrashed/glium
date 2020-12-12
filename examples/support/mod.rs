@@ -1,12 +1,9 @@
 #![allow(dead_code)]
-
-extern crate genmesh;
-extern crate obj;
-
-use std::thread;
 use std::time::{Duration, Instant};
 use glium::{self, Display};
 use glium::vertex::VertexBufferAny;
+use glium::glutin::event_loop::{EventLoop, ControlFlow};
+use glium::glutin::event::{Event, StartCause};
 
 pub mod camera;
 
@@ -15,29 +12,47 @@ pub enum Action {
     Continue,
 }
 
-pub fn start_loop<F>(mut callback: F) where F: FnMut() -> Action {
-    let mut accumulator = Duration::new(0, 0);
-    let mut previous_clock = Instant::now();
-
-    loop {
-        match callback() {
-            Action::Stop => break,
-            Action::Continue => ()
+pub fn start_loop<F>(event_loop: EventLoop<()>, mut callback: F)->! where F: 'static + FnMut(&Vec<Event<'_, ()>>) -> Action {
+    let mut events_buffer = Vec::new();
+    let mut next_frame_time = Instant::now();
+    event_loop.run(move |event, _, control_flow| {
+        let run_callback = match event.to_static() {
+            Some(Event::NewEvents(cause)) => {
+                match cause {
+                    StartCause::ResumeTimeReached { .. } | StartCause::Init => {
+                        true
+                    },
+                    _ => false
+                }
+            },
+            Some(event) => {
+                events_buffer.push(event);
+                false
+            }
+            None => {
+                // Ignore this event.
+                false
+            },
         };
 
-        let now = Instant::now();
-        accumulator += now - previous_clock;
-        previous_clock = now;
+        let action = if run_callback {
+            let action = callback(&events_buffer);
+            next_frame_time = Instant::now() + Duration::from_nanos(16666667);
+            // TODO: Add back the old accumulator loop in some way
 
-        let fixed_time_stamp = Duration::new(0, 16666667);
-        while accumulator >= fixed_time_stamp {
-            accumulator -= fixed_time_stamp;
+            events_buffer.clear();
+            action
+        } else {
+            Action::Continue
+        };
 
-            // if you have a game, update the state here
+        match action {
+            Action::Continue => {
+                *control_flow = ControlFlow::WaitUntil(next_frame_time);
+            },
+            Action::Stop => *control_flow = ControlFlow::Exit
         }
-
-        thread::sleep(fixed_time_stamp - accumulator);
-    }
+    })
 }
 
 /// Returns a vertex buffer that should be rendered as `TrianglesList`.
@@ -52,33 +67,32 @@ pub fn load_wavefront(display: &Display, data: &[u8]) -> VertexBufferAny {
     implement_vertex!(Vertex, position, normal, texture);
 
     let mut data = ::std::io::BufReader::new(data);
-    let data = obj::Obj::load(&mut data);
+    let data = obj::ObjData::load_buf(&mut data).unwrap();
 
     let mut vertex_data = Vec::new();
 
-    for object in data.object_iter() {
-        for shape in object.group_iter().flat_map(|g| g.indices().iter()) {
-            match shape {
-                &genmesh::Polygon::PolyTri(genmesh::Triangle { x: v1, y: v2, z: v3 }) => {
-                    for v in [v1, v2, v3].iter() {
-                        let position = data.position()[v.0];
-                        let texture = v.1.map(|index| data.texture()[index]);
-                        let normal = v.2.map(|index| data.normal()[index]);
+    for object in data.objects.iter() {
+        for polygon in object.groups.iter().flat_map(|g| g.polys.iter()) {
+            match polygon {
+                obj::SimplePolygon(indices) => {
+                    for v in indices.iter() {
+                        let position = data.position[v.0];
+                        let texture = v.1.map(|index| data.texture[index]);
+                        let normal = v.2.map(|index| data.normal[index]);
 
                         let texture = texture.unwrap_or([0.0, 0.0]);
                         let normal = normal.unwrap_or([0.0, 0.0, 0.0]);
 
                         vertex_data.push(Vertex {
-                            position: position,
-                            normal: normal,
-                            texture: texture,
+                            position,
+                            normal,
+                            texture,
                         })
                     }
                 },
-                _ => unimplemented!()
             }
         }
     }
 
-    glium::vertex::VertexBuffer::new(display, &vertex_data).unwrap().into_vertex_buffer_any()
+    glium::vertex::VertexBuffer::new(display, &vertex_data).unwrap().into()
 }

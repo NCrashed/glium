@@ -8,14 +8,14 @@ use std::borrow::Cow;
 use std::cell::Cell;
 use std::ops::{Deref, DerefMut};
 
-use backend::Facade;
+use crate::backend::Facade;
 
-use GlObject;
-use buffer::{ReadError, Buffer, BufferType, BufferMode};
-use gl;
+use crate::GlObject;
+use crate::buffer::{ReadError, Buffer, BufferType, BufferMode};
+use crate::gl;
 
-use texture::PixelValue;
-use texture::Texture2dDataSink;
+use crate::texture::PixelValue;
+use crate::texture::Texture2dDataSink;
 
 /// Buffer that stores the content of a texture.
 ///
@@ -40,7 +40,7 @@ impl<T> PixelBuffer<T> where T: PixelValue {
     #[inline]
     pub fn read_as_texture_2d<S>(&self) -> Result<S, ReadError> where S: Texture2dDataSink<T> {
         let dimensions = self.dimensions.get().expect("The pixel buffer is empty");
-        let data = try!(self.read());
+        let data = self.read()?;
         Ok(S::from_raw(Cow::Owned(data), dimensions.0, dimensions.1))
     }
 }

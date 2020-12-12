@@ -1,25 +1,26 @@
-use buffer::{Content, Buffer, BufferAny, BufferType, BufferMode, BufferCreationError};
-use buffer::{BufferSlice, BufferMutSlice};
-use uniforms::{AsUniformValue, UniformBlock, UniformValue, LayoutMismatchError};
-use program;
+use crate::buffer::{Content, Buffer, BufferAny, BufferType, BufferMode, BufferCreationError};
+use crate::buffer::{BufferSlice, BufferMutSlice};
+use crate::uniforms::{AsUniformValue, UniformBlock, UniformValue, LayoutMismatchError};
+use crate::program;
 
-use gl;
-use GlObject;
+use crate::gl;
+use crate::GlObject;
 
 use std::ops::{Deref, DerefMut};
 
-use backend::Facade;
+use crate::backend::Facade;
 
 /// Buffer that contains a uniform block.
 ///
-/// For example, to use a `UniformBuffer<[u32; 8]>`, you must declare it as
-///
+/// For example, to use a `UniformBuffer<[u32; 8]>`, you must declare it in GLSL as
+///```ignore
 ///     uniform MyBlock {
 ///         uint array[8];
 ///     };
+///```
 ///
 /// and pass it to `uniform!` like this:
-///
+///     # use glium::uniform;
 ///     uniform! {
 ///         MyBlock: &buffer,
 ///     }
@@ -81,10 +82,10 @@ impl<T> UniformBuffer<T> where T: Copy {
                    -> Result<UniformBuffer<T>, BufferCreationError>
                    where F: Facade
     {
-        let buffer = try!(Buffer::new(facade, &data, BufferType::UniformBuffer, mode));
+        let buffer = Buffer::new(facade, &data, BufferType::UniformBuffer, mode)?;
 
         Ok(UniformBuffer {
-            buffer: buffer,
+            buffer,
         })
     }
 
@@ -122,10 +123,10 @@ impl<T> UniformBuffer<T> where T: Copy {
     fn empty_impl<F: ?Sized>(facade: &F, mode: BufferMode) -> Result<UniformBuffer<T>, BufferCreationError>
                      where F: Facade
     {
-        let buffer = try!(Buffer::empty(facade, BufferType::UniformBuffer, mode));
+        let buffer = Buffer::empty(facade, BufferType::UniformBuffer, mode)?;
 
         Ok(UniformBuffer {
-            buffer: buffer,
+            buffer,
         })
     }
 }
@@ -192,10 +193,10 @@ impl<T: ?Sized> UniformBuffer<T> where T: Content {
                              -> Result<UniformBuffer<T>, BufferCreationError>
                              where F: Facade
     {
-        let buffer = try!(Buffer::empty_unsized(facade, BufferType::UniformBuffer, size, mode));
+        let buffer = Buffer::empty_unsized(facade, BufferType::UniformBuffer, size, mode)?;
 
         Ok(UniformBuffer {
-            buffer: buffer,
+            buffer,
         })
     }
 }
@@ -232,7 +233,7 @@ impl<'a, T: ?Sized> From<&'a mut UniformBuffer<T>> for BufferMutSlice<'a, T> whe
 
 impl<'a, T: ?Sized> AsUniformValue for &'a UniformBuffer<T> where T: UniformBlock + Content {
     #[inline]
-    fn as_uniform_value(&self) -> UniformValue {
+    fn as_uniform_value(&self) -> UniformValue<'_> {
         #[inline]
         fn f<T: ?Sized>(block: &program::UniformBlock)
                         -> Result<(), LayoutMismatchError> where T: UniformBlock + Content

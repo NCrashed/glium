@@ -160,7 +160,7 @@ fn time_elapsed() {
 }
 
 #[test]
-#[ignore]       // not sure about the interaction between pritmives_generated and no geometry shader
+#[ignore]       // not sure about the interaction between primitives_generated and no geometry shader
 fn primitives_generated() {
     let display = support::build_display();
 
@@ -300,7 +300,7 @@ fn query_to_buffer() {
     let mut buffer = glium::buffer::BufferView::empty(&display,
                                                       glium::buffer::BufferType::ArrayBuffer,
                                                       glium::buffer::BufferMode::Default).unwrap();
-    if let Err(_) = query.to_buffer_u32(buffer.as_slice()) {
+    if query.to_buffer_u32(buffer.as_slice()).is_err() {
         return;
     }
 

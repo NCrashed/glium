@@ -4,7 +4,7 @@ Easy-to-use, high-level, OpenGL3+ wrapper.
 Glium is based on glutin - a cross-platform crate for building an OpenGL window and handling
 application events.
 
-Glium provides a **Display** which extends the **glutin::GlWindow** with a high-level, safe API.
+Glium provides a **Display** which extends the **glutin::WindowedContext** with a high-level, safe API.
 
 # Initialization
 
@@ -15,16 +15,16 @@ extern crate glium;
 
 fn main() {
     // 1. The **winit::EventsLoop** for handling events.
-    let mut events_loop = glium::glutin::EventsLoop::new();
+    let mut events_loop = glium::glutin::event_loop::EventLoop::new();
     // 2. Parameters for building the Window.
-    let window = glium::glutin::WindowBuilder::new()
-        .with_dimensions(1024, 768)
+    let wb = glium::glutin::window::WindowBuilder::new()
+        .with_inner_size(glium::glutin::dpi::LogicalSize::new(1024.0, 768.0))
         .with_title("Hello world");
     // 3. Parameters for building the OpenGL context.
-    let context = glium::glutin::ContextBuilder::new();
+    let cb = glium::glutin::ContextBuilder::new();
     // 4. Build the Display with the given window and OpenGL context parameters and register the
     //    window with the events_loop.
-    let display = glium::Display::new(window, context, &events_loop).unwrap();
+    let display = glium::Display::new(wb, cb, &events_loop).unwrap();
 }
 ```
 
@@ -100,23 +100,20 @@ result to the user.
 #[macro_use]
 extern crate lazy_static;
 
-extern crate backtrace;
-extern crate smallvec;
-extern crate fnv;
-
 #[cfg(feature = "glutin")]
-pub use backend::glutin::glutin;
-pub use context::Profile;
-pub use draw_parameters::{Blend, BlendingFunction, LinearBlendingFactor, BackfaceCullingMode};
-pub use draw_parameters::{Depth, DepthTest, PolygonMode, DrawParameters, StencilTest, StencilOperation};
-pub use draw_parameters::{Smooth};
-pub use index::IndexBuffer;
-pub use vertex::{VertexBuffer, Vertex, VertexFormat};
-pub use program::{Program, ProgramCreationError};
-pub use program::ProgramCreationError::{CompilationError, LinkingError, ShaderTypeNotSupported};
-pub use sync::{LinearSyncFence, SyncFence};
-pub use texture::Texture2d;
-pub use version::{Api, Version, get_supported_glsl_version};
+pub use crate::backend::glutin::glutin;
+pub use crate::context::Profile;
+pub use crate::draw_parameters::{Blend, BlendingFunction, LinearBlendingFactor, BackfaceCullingMode};
+pub use crate::draw_parameters::{Depth, DepthTest, PolygonMode, DrawParameters, StencilTest, StencilOperation};
+pub use crate::draw_parameters::{Smooth};
+pub use crate::index::IndexBuffer;
+pub use crate::vertex::{VertexBuffer, Vertex, VertexFormat};
+pub use crate::program::{Program, ProgramCreationError};
+pub use crate::program::ProgramCreationError::{CompilationError, LinkingError, ShaderTypeNotSupported};
+pub use crate::sync::{LinearSyncFence, SyncFence};
+pub use crate::texture::Texture2d;
+pub use crate::version::{Api, Version, get_supported_glsl_version};
+pub use crate::ops::ReadError;
 
 use std::rc::Rc;
 use std::thread;
@@ -127,8 +124,8 @@ use std::collections::HashMap;
 
 use fnv::FnvHasher;
 
-use context::Context;
-use context::CommandContext;
+use crate::context::Context;
+use crate::context::CommandContext;
 
 #[macro_use]
 mod macros;
@@ -144,6 +141,7 @@ pub mod program;
 pub mod uniforms;
 pub mod vertex;
 pub mod texture;
+pub mod field;
 
 mod context;
 mod fbo;
@@ -159,15 +157,18 @@ mod gl {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
 
+#[doc(hidden)]
+pub use memoffset::offset_of as __glium_offset_of;
+
 /// The main object of this library. Controls the whole display.
 ///
 /// This object contains a smart pointer to the real implementation.
 /// Cloning the display allows you to easily share the `Display` object throughout
 /// your program.
 #[cfg(feature = "glutin")]
-pub use backend::glutin::Display;
+pub use crate::backend::glutin::Display;
 #[cfg(feature = "glutin")]
-pub use backend::glutin::headless::Headless as HeadlessRenderer;
+pub use crate::backend::glutin::headless::Headless as HeadlessRenderer;
 
 /// Trait for objects that describe the capabilities of an OpenGL backend.
 pub trait CapabilitiesSource {
@@ -194,7 +195,7 @@ pub trait GlObject {
 // TODO: Handle(null()) is equal to Id(0)
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub enum Handle {
-    /// A numberic identifier.
+    /// A numeric identifier.
     Id(gl::types::GLuint),
     /// A `GLhandleARB`.
     Handle(gl::types::GLhandleARB),
@@ -214,54 +215,58 @@ trait BufferExt {
     fn get_offset_bytes(&self) -> usize;
 
     /// Calls `glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT)` if necessary.
-    fn prepare_for_vertex_attrib_array(&self, &mut CommandContext);
+    fn prepare_for_vertex_attrib_array(&self, _: &mut CommandContext<'_>);
 
     /// Calls `glMemoryBarrier(ELEMENT_ARRAY_BARRIER_BIT)` if necessary.
-    fn prepare_for_element_array(&self, &mut CommandContext);
+    fn prepare_for_element_array(&self, _: &mut CommandContext<'_>);
 
     /// Binds the buffer to `GL_ELEMENT_ARRAY_BUFFER` regardless of the current vertex array object.
-    fn bind_to_element_array(&self, &mut CommandContext);
+    fn bind_to_element_array(&self, _: &mut CommandContext<'_>);
 
     /// Makes sure that the buffer is bound to the `GL_PIXEL_PACK_BUFFER` and calls
     /// `glMemoryBarrier(GL_PIXEL_BUFFER_BARRIER_BIT)` if necessary.
-    fn prepare_and_bind_for_pixel_pack(&self, &mut CommandContext);
+    fn prepare_and_bind_for_pixel_pack(&self, _: &mut CommandContext<'_>);
 
     /// Makes sure that nothing is bound to `GL_PIXEL_PACK_BUFFER`.
-    fn unbind_pixel_pack(&mut CommandContext);
+    fn unbind_pixel_pack(_: &mut CommandContext<'_>);
 
     /// Makes sure that the buffer is bound to the `GL_PIXEL_UNPACK_BUFFER` and calls
     /// `glMemoryBarrier(GL_PIXEL_BUFFER_BARRIER_BIT)` if necessary.
-    fn prepare_and_bind_for_pixel_unpack(&self, &mut CommandContext);
+    fn prepare_and_bind_for_pixel_unpack(&self, _: &mut CommandContext<'_>);
 
     /// Makes sure that nothing is bound to `GL_PIXEL_UNPACK_BUFFER`.
-    fn unbind_pixel_unpack(&mut CommandContext);
+    fn unbind_pixel_unpack(_: &mut CommandContext<'_>);
 
     /// Makes sure that the buffer is bound to the `GL_QUERY_BUFFER` and calls
     /// `glMemoryBarrier(GL_PIXEL_BUFFER_BARRIER_BIT)` if necessary.
-    fn prepare_and_bind_for_query(&self, &mut CommandContext);
+    fn prepare_and_bind_for_query(&self, _: &mut CommandContext<'_>);
 
     /// Makes sure that nothing is bound to `GL_QUERY_BUFFER`.
-    fn unbind_query(&mut CommandContext);
+    fn unbind_query(_: &mut CommandContext<'_>);
 
     /// Makes sure that the buffer is bound to the `GL_DRAW_INDIRECT_BUFFER` and calls
     /// `glMemoryBarrier(GL_COMMAND_BARRIER_BIT)` if necessary.
-    fn prepare_and_bind_for_draw_indirect(&self, &mut CommandContext);
+    fn prepare_and_bind_for_draw_indirect(&self, _: &mut CommandContext<'_>);
 
     /// Makes sure that the buffer is bound to the `GL_DISPATCH_INDIRECT_BUFFER` and calls
     /// `glMemoryBarrier(GL_COMMAND_BARRIER_BIT)` if necessary.
-    fn prepare_and_bind_for_dispatch_indirect(&self, &mut CommandContext);
+    fn prepare_and_bind_for_dispatch_indirect(&self, _: &mut CommandContext<'_>);
 
     /// Makes sure that the buffer is bound to the indexed `GL_UNIFORM_BUFFER` point and calls
     /// `glMemoryBarrier(GL_UNIFORM_BARRIER_BIT)` if necessary.
-    fn prepare_and_bind_for_uniform(&self, &mut CommandContext, index: gl::types::GLuint);
+    fn prepare_and_bind_for_uniform(&self, _: &mut CommandContext<'_>, index: gl::types::GLuint);
 
     /// Makes sure that the buffer is bound to the indexed `GL_SHARED_STORAGE_BUFFER` point and calls
     /// `glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)` if necessary.
-    fn prepare_and_bind_for_shared_storage(&self, &mut CommandContext, index: gl::types::GLuint);
+    fn prepare_and_bind_for_shared_storage(&self, _: &mut CommandContext<'_>, index: gl::types::GLuint);
+
+    /// Makes sure that the buffer is bound to the indexed `GL_ATOMIC_COUNTER_BUFFER` point and calls
+    /// `glMemoryBarrier(GL_ATOMIC_COUNTER_BARRIER_BIT)` if necessary.
+    fn prepare_and_bind_for_atomic_counter(&self, _: &mut CommandContext<'_>, index: gl::types::GLuint);
 
     /// Binds the buffer to `GL_TRANSFORM_FEEDBACk_BUFFER` regardless of the current transform
     /// feedback object.
-    fn bind_to_transform_feedback(&self, &mut CommandContext, index: gl::types::GLuint);
+    fn bind_to_transform_feedback(&self, _: &mut CommandContext<'_>, index: gl::types::GLuint);
 }
 
 /// Internal trait for subbuffer slices.
@@ -278,7 +283,7 @@ trait ContextExt {
     fn set_report_debug_output_errors(&self, value: bool);
 
     /// Start executing OpenGL commands by checking the current context.
-    fn make_current(&self) -> context::CommandContext;
+    fn make_current(&self) -> context::CommandContext<'_>;
 
     /// Returns the capabilities of the backend.
     fn capabilities(&self) -> &context::Capabilities;
@@ -288,23 +293,23 @@ trait ContextExt {
 trait ProgramExt {
     /// Calls `glUseProgram` and enables/disables `GL_PROGRAM_POINT_SIZE` and
     /// `GL_FRAMEBUFFER_SRGB`.
-    fn use_program(&self, ctxt: &mut context::CommandContext);
+    fn use_program(&self, ctxt: &mut context::CommandContext<'_>);
 
     /// Changes the value of a uniform of the program.
-    fn set_uniform(&self, ctxt: &mut context::CommandContext, uniform_location: gl::types::GLint,
+    fn set_uniform(&self, ctxt: &mut context::CommandContext<'_>, uniform_location: gl::types::GLint,
                    value: &RawUniformValue);
 
     /// Changes the uniform block binding of the program.
-    fn set_uniform_block_binding(&self, ctxt: &mut context::CommandContext,
+    fn set_uniform_block_binding(&self, ctxt: &mut context::CommandContext<'_>,
                                  block_location: gl::types::GLuint, value: gl::types::GLuint);
 
     /// Changes the shader storage block binding of the program.
-    fn set_shader_storage_block_binding(&self, ctxt: &mut context::CommandContext,
+    fn set_shader_storage_block_binding(&self, ctxt: &mut context::CommandContext<'_>,
                                         block_location: gl::types::GLuint,
                                         value: gl::types::GLuint);
 
     /// Changes the subroutine uniform bindings of a program.
-    fn set_subroutine_uniforms_for_stage(&self, ctxt: &mut context::CommandContext,
+    fn set_subroutine_uniforms_for_stage(&self, ctxt: &mut context::CommandContext<'_>,
                                          stage: program::ShaderStage,
                                          indices: &[gl::types::GLuint]);
 
@@ -314,24 +319,26 @@ trait ProgramExt {
 
     fn get_shader_storage_blocks(&self) -> &HashMap<String, program::UniformBlock, BuildHasherDefault<FnvHasher>>;
 
+    fn get_atomic_counters(&self) -> &HashMap<String, program::UniformBlock, BuildHasherDefault<FnvHasher>>;
+
     fn get_subroutine_data(&self) -> &program::SubroutineData;
 }
 
 /// Internal trait for queries.
 trait QueryExt {
-    fn begin_query(&self, ctxt: &mut CommandContext) -> Result<(), DrawError>;
+    fn begin_query(&self, ctxt: &mut CommandContext<'_>) -> Result<(), DrawError>;
 
-    fn end_samples_passed_query(ctxt: &mut CommandContext);
+    fn end_samples_passed_query(ctxt: &mut CommandContext<'_>);
 
-    fn end_time_elapsed_query(ctxt: &mut CommandContext);
+    fn end_time_elapsed_query(ctxt: &mut CommandContext<'_>);
 
-    fn end_primitives_generated_query(ctxt: &mut CommandContext);
+    fn end_primitives_generated_query(ctxt: &mut CommandContext<'_>);
 
-    fn end_transform_feedback_primitives_written_query(ctxt: &mut CommandContext);
+    fn end_transform_feedback_primitives_written_query(ctxt: &mut CommandContext<'_>);
 
-    fn begin_conditional_render(&self, ctxt: &mut CommandContext, wait: bool, per_region: bool);
+    fn begin_conditional_render(&self, ctxt: &mut CommandContext<'_>, wait: bool, per_region: bool);
 
-    fn end_conditional_render(ctxt: &mut CommandContext);
+    fn end_conditional_render(ctxt: &mut CommandContext<'_>);
 
     /// Returns true if the query has never been used.
     fn is_unused(&self) -> bool;
@@ -350,14 +357,14 @@ trait TextureExt {
 
     /// Makes sure that the texture is bound to the current texture unit and returns the
     /// bind point to use to access the texture (eg. `GL_TEXTURE_2D`, `GL_TEXTURE_3D`, etc.).
-    fn bind_to_current(&self, &mut CommandContext) -> gl::types::GLenum;
+    fn bind_to_current(&self, _: &mut CommandContext<'_>) -> gl::types::GLenum;
 }
 
 /// Internal trait for textures.
 trait TextureMipmapExt {
     /// Changes some parts of the texture.
     fn upload_texture<'a, P>(&self, x_offset: u32, y_offset: u32, z_offset: u32,
-                             (image_format::ClientFormatAny, std::borrow::Cow<'a, [P]>), width: u32,
+                             _: (image_format::ClientFormatAny, std::borrow::Cow<'a, [P]>), width: u32,
                              height: Option<u32>, depth: Option<u32>,
                              regen_mipmaps: bool)
                              -> Result<(), ()>   // TODO return a better Result!?
@@ -371,13 +378,13 @@ trait TransformFeedbackSessionExt {
     /// Updates the state of OpenGL to make the transform feedback session current.
     ///
     /// The second parameter must be the primitive type of the input vertex data.
-    fn bind(&self, &mut CommandContext, index::PrimitiveType);
+    fn bind(&self, _: &mut CommandContext<'_>, _: index::PrimitiveType);
 
     /// Ensures that transform feedback is disabled.
-    fn unbind(&mut CommandContext);
+    fn unbind(_: &mut CommandContext<'_>);
 
     /// Ensures that a buffer isn't used by transform feedback.
-    fn ensure_buffer_out_of_transform_feedback(&mut CommandContext, gl::types::GLuint);
+    fn ensure_buffer_out_of_transform_feedback(_: &mut CommandContext<'_>, _: gl::types::GLuint);
 }
 
 /// Internal trait for uniforms handling.
@@ -385,7 +392,7 @@ trait UniformsExt {
     /// Binds the uniforms to a given program.
     ///
     /// Will replace texture and buffer bind points.
-    fn bind_uniforms<'a, P>(&'a self, &mut CommandContext, &P, &mut Vec<buffer::Inserter<'a>>)
+    fn bind_uniforms<'a, P>(&'a self, _: &mut CommandContext<'_>, _: &P, _: &mut Vec<buffer::Inserter<'a>>)
                             -> Result<(), DrawError> where P: ProgramExt;
 }
 
@@ -473,7 +480,7 @@ pub struct BlitTarget {
 /// # What does the GPU do when you draw?
 ///
 /// This is a summary of everything that happens when you call the `draw` function. Note that
-/// this is not necessarly *exactly* what happens. Backends are free to do whatever they want
+/// this is not necessarily *exactly* what happens. Backends are free to do whatever they want
 /// as long as it always matches the expected outcome.
 ///
 /// ## Step 1: Vertex shader
@@ -766,8 +773,8 @@ pub trait Surface {
     /// documentation for example how to use it.
     ///
     /// See above for what happens exactly on the GPU when you draw.
-    fn draw<'a, 'b, V, I, U>(&mut self, V, I, program: &Program, uniforms: &U,
-        draw_parameters: &DrawParameters) -> Result<(), DrawError> where
+    fn draw<'a, 'b, V, I, U>(&mut self, _: V, _: I, program: &Program, uniforms: &U,
+        draw_parameters: &DrawParameters<'_>) -> Result<(), DrawError> where
         V: vertex::MultiVerticesSource<'b>, I: Into<index::IndicesSource<'a>>,
         U: uniforms::Uniforms;
 
@@ -776,12 +783,12 @@ pub trait Surface {
                        filter: uniforms::MagnifySamplerFilter);
 
     /// Blits from a simple framebuffer.
-    fn blit_from_simple_framebuffer(&self, source: &framebuffer::SimpleFrameBuffer,
+    fn blit_from_simple_framebuffer(&self, source: &framebuffer::SimpleFrameBuffer<'_>,
                                     source_rect: &Rect, target_rect: &BlitTarget,
                                     filter: uniforms::MagnifySamplerFilter);
 
     /// Blits from a multi-output framebuffer.
-    fn blit_from_multioutput_framebuffer(&self, source: &framebuffer::MultiOutputFrameBuffer,
+    fn blit_from_multioutput_framebuffer(&self, source: &framebuffer::MultiOutputFrameBuffer<'_>,
                                          source_rect: &Rect, target_rect: &BlitTarget,
                                          filter: uniforms::MagnifySamplerFilter);
 
@@ -824,7 +831,7 @@ pub trait Surface {
 /// Private trait for framebuffer-like objects that provide attachments.
 trait FboAttachments {
     /// Returns the list of attachments of this FBO, or `None` if it is the default framebuffer.
-    fn get_attachments(&self) -> Option<&fbo::ValidatedAttachments>;
+    fn get_attachments(&self) -> Option<&fbo::ValidatedAttachments<'_>>;
 }
 
 /// Error that can happen while drawing.
@@ -894,7 +901,7 @@ pub enum DrawError {
 
     },
 
-    /// A non-existant subroutine was referenced.
+    /// A non-existent subroutine was referenced.
     SubroutineNotFound {
         /// The stage the subroutine was searched for.
         stage: program::ShaderStage,
@@ -943,12 +950,26 @@ pub enum DrawError {
 
     /// Restarting indices (multiple objects per draw call) is not supported by the backend.
     FixedIndexRestartingNotSupported,
+
+    /// Tried to enable a clip plane that does not exist.
+    ClipPlaneIndexOutOfBounds,
 }
 
 impl Error for DrawError {
-    fn description(&self) -> &str {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         use self::DrawError::*;
         match *self {
+            UniformBlockLayoutMismatch { ref err, .. } => Some(err),
+            _ => None,
+        }
+    }
+}
+
+
+impl fmt::Display for DrawError {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        use self::DrawError::*;
+        let desc = match self {
             NoDepthBuffer =>
                 "A depth function has been requested but no depth buffer is available",
             AttributeTypeMismatch =>
@@ -972,7 +993,7 @@ impl Error for DrawError {
             SubroutineUniformMissing { .. } =>
                 "Not all subroutine uniforms of a shader stage were set",
             SubroutineNotFound { .. } =>
-                "A non-existant subroutine was referenced",
+                "A non-existent subroutine was referenced",
             UnsupportedVerticesPerPatch =>
                 "The number of vertices per patch that has been requested is not supported",
             TessellationNotSupported =>
@@ -986,7 +1007,7 @@ impl Error for DrawError {
             VerticesSourcesLengthMismatch =>
                 "If you don't use indices, then all vertices sources must have the same size",
             TransformFeedbackNotSupported =>
-                "Requested not to draw primitves, but this is not supported by the backend",
+                "Requested not to draw primitives, but this is not supported by the backend",
             WrongQueryOperation =>
                 "Wrong query operation",
             SmoothingNotSupported =>
@@ -1001,55 +1022,42 @@ impl Error for DrawError {
                 "One the blending parameters is not supported by the backend",
             FixedIndexRestartingNotSupported =>
                 "Restarting indices (multiple objects per draw call) is not supported by the backend",
-        }
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        use self::DrawError::*;
-        match *self {
-            UniformBlockLayoutMismatch { ref err, .. } => Some(err),
-            _ => None,
-        }
-    }
-}
-
-
-impl fmt::Display for DrawError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        use self::DrawError::*;
-        match *self {
-            UniformTypeMismatch { ref name, ref expected } =>
+            ClipPlaneIndexOutOfBounds =>
+                "Tried to enable a clip plane that does not exist."
+        };
+        match self {
+            UniformTypeMismatch { name, expected } =>
                 write!(
                     fmt,
                     "{}, got: {:?}, expected: {:?}",
-                    self.description(),
+                    desc,
                     name,
                     expected,
                 ),
-            UniformBufferToValue { ref name } =>
+            UniformBufferToValue { name } =>
                 write!(
                     fmt,
                     "{}: {}",
-                    self.description(),
+                    desc,
                     name,
                 ),
-            UniformValueToBlock { ref name } =>
+            UniformValueToBlock { name } =>
                 write!(
                     fmt,
                     "{}: {}",
-                    self.description(),
+                    desc,
                     name,
                 ),
-            UniformBlockLayoutMismatch { ref name, ref err } =>
+            UniformBlockLayoutMismatch { name, err } =>
                 write!(
                     fmt,
                     "{}: {}, caused by {}",
-                    self.description(),
+                    desc,
                     name,
                     err,
                 ),
             _ =>
-                write!(fmt, "{}", self.description()),
+                fmt.write_str(desc),
         }
     }
 }
@@ -1075,21 +1083,18 @@ pub enum SwapBuffersError {
     AlreadySwapped,
 }
 
-impl Error for SwapBuffersError {
-    fn description(&self) -> &str {
+impl Error for SwapBuffersError {}
+
+impl fmt::Display for SwapBuffersError {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use self::SwapBuffersError::*;
-        match *self {
+        let desc = match *self {
             ContextLost =>
                 "the OpenGL context has been lost and needs to be recreated",
             AlreadySwapped =>
                 "the buffers have already been swapped",
-        }
-    }
-}
-
-impl fmt::Display for SwapBuffersError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(fmt, "{}", self.description())
+        };
+        fmt.write_str(desc)
     }
 }
 
@@ -1109,8 +1114,8 @@ impl Frame {
     #[inline]
     pub fn new(context: Rc<Context>, dimensions: (u32, u32)) -> Frame {
         Frame {
-            context: context,
-            dimensions: dimensions,
+            context,
+            dimensions,
             destroyed: false,
         }
     }
@@ -1160,7 +1165,7 @@ impl Surface for Frame {
 
     fn draw<'a, 'b, V, I, U>(&mut self, vertex_buffer: V,
                          index_buffer: I, program: &Program, uniforms: &U,
-                         draw_parameters: &DrawParameters) -> Result<(), DrawError>
+                         draw_parameters: &DrawParameters<'_>) -> Result<(), DrawError>
                          where I: Into<index::IndicesSource<'a>>, U: uniforms::Uniforms,
                          V: vertex::MultiVerticesSource<'b>
     {
@@ -1203,7 +1208,7 @@ impl Surface for Frame {
     }
 
     #[inline]
-    fn blit_from_simple_framebuffer(&self, source: &framebuffer::SimpleFrameBuffer,
+    fn blit_from_simple_framebuffer(&self, source: &framebuffer::SimpleFrameBuffer<'_>,
                                     source_rect: &Rect, target_rect: &BlitTarget,
                                     filter: uniforms::MagnifySamplerFilter)
     {
@@ -1212,7 +1217,7 @@ impl Surface for Frame {
     }
 
     #[inline]
-    fn blit_from_multioutput_framebuffer(&self, source: &framebuffer::MultiOutputFrameBuffer,
+    fn blit_from_multioutput_framebuffer(&self, source: &framebuffer::MultiOutputFrameBuffer<'_>,
                                          source_rect: &Rect, target_rect: &BlitTarget,
                                          filter: uniforms::MagnifySamplerFilter)
     {
@@ -1223,7 +1228,7 @@ impl Surface for Frame {
 
 impl FboAttachments for Frame {
     #[inline]
-    fn get_attachments(&self) -> Option<&fbo::ValidatedAttachments> {
+    fn get_attachments(&self) -> Option<&fbo::ValidatedAttachments<'_>> {
         None
     }
 }
@@ -1243,21 +1248,16 @@ impl Drop for Frame {
 pub struct IncompatibleOpenGl(pub String);
 
 impl fmt::Display for IncompatibleOpenGl {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.description())
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.write_str("The OpenGL implementation is too old to work with glium")
     }
 }
 
-impl Error for IncompatibleOpenGl {
-    #[inline]
-    fn description(&self) -> &str {
-        "The OpenGL implementation is too old to work with glium"
-    }
-}
+impl Error for IncompatibleOpenGl {}
 
 #[allow(dead_code)]
 #[inline]
-fn get_gl_error(ctxt: &mut context::CommandContext) -> Option<&'static str> {
+fn get_gl_error(ctxt: &mut context::CommandContext<'_>) -> Option<&'static str> {
     match unsafe { ctxt.gl.GetError() } {
         gl::NO_ERROR => None,
         gl::INVALID_ENUM => Some("GL_INVALID_ENUM"),

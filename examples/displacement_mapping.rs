@@ -1,21 +1,21 @@
-extern crate image;
 #[macro_use]
 extern crate glium;
 
 use std::io::Cursor;
+#[allow(unused_imports)]
 use glium::{glutin, Surface};
 
 mod support;
 
 fn main() {
     // building the display, ie. the main object
-    let mut events_loop = glutin::EventsLoop::new();
-    let window = glutin::WindowBuilder::new();
-    let context = glutin::ContextBuilder::new();
-    let display = glium::Display::new(window, context, &events_loop).unwrap();
+    let event_loop = glutin::event_loop::EventLoop::new();
+    let wb = glutin::window::WindowBuilder::new();
+    let cb = glutin::ContextBuilder::new();
+    let display = glium::Display::new(wb, cb, &event_loop).unwrap();
 
     let image = image::load(Cursor::new(&include_bytes!("../tests/fixture/opengl.png")[..]),
-                            image::PNG).unwrap().to_rgba();
+                            image::ImageFormat::Png).unwrap().to_rgba8();
     let image_dimensions = image.dimensions();
     let image = glium::texture::RawImage2d::from_raw_rgba_reversed(&image.into_raw(), image_dimensions);
     let opengl_texture = glium::texture::CompressedSrgbTexture2d::new(&display, image).unwrap();
@@ -30,7 +30,7 @@ fn main() {
 
         implement_vertex!(Vertex, position, tex_coords);
 
-        glium::VertexBuffer::new(&display, 
+        glium::VertexBuffer::new(&display,
             &[
                 Vertex { position: [-0.5,  0.5, 3.0], tex_coords: [1.0, 1.0] },
                 Vertex { position: [ 0.5,  0.5, 3.0], tex_coords: [0.0, 1.0] },
@@ -117,7 +117,7 @@ fn main() {
                     vec3 normal = normalize(gl_TessCoord.x * tc_normal[0] +
                                             gl_TessCoord.y * tc_normal[1] +
                                             gl_TessCoord.z * tc_normal[2]);
- 
+
                     vec2 tex_coords = gl_TessCoord.x * tc_tex_coords[0] +
                                       gl_TessCoord.y * tc_tex_coords[1] +
                                       gl_TessCoord.z * tc_tex_coords[2];
@@ -188,7 +188,7 @@ fn main() {
     let camera = support::camera::CameraState::new();
 
     // the main loop
-    support::start_loop(|| {
+    support::start_loop(event_loop, move |events| {
         // building the uniforms
         let uniforms = uniform! {
             inner_level: 64.0f32,
@@ -219,13 +219,13 @@ fn main() {
         let mut action = support::Action::Continue;
 
         // polling and handling the events received by the window
-        events_loop.poll_events(|event| {
+        for event in events {
             match event {
-                glutin::Event::WindowEvent { event: glutin::WindowEvent::Closed, .. } =>
+                glutin::event::Event::WindowEvent { event: glutin::event::WindowEvent::CloseRequested, .. } =>
                     action = support::Action::Stop,
                 _ => ()
             }
-        });
+        };
 
         action
     });

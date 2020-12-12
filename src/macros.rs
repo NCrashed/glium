@@ -77,6 +77,10 @@ macro_rules! uniform {
 ///
 /// The parameters must be the name of the struct and the names of its fields.
 ///
+/// ## Safety
+///
+/// You must not use this macro on any struct with fields that cannot be zeroed.
+///
 /// ## Example
 ///
 /// ```
@@ -93,6 +97,12 @@ macro_rules! uniform {
 /// # }
 /// ```
 ///
+/// ## Naming convention
+///
+/// When it comes to using to using your vertex array in a shader you must make sure that all your attribute variables *match* the field names in the struct you are calling calling this macro for.
+///
+/// So, if you have a `vertex_position` atribute/input in your shader, a field named `vertex_position` must be present in the struct. Ohterwise the drawing functions will panic.
+///
 #[macro_export]
 macro_rules! implement_vertex {
     ($struct_name:ident, $($field_name:ident),+) => (
@@ -107,26 +117,17 @@ macro_rules! implement_vertex {
                     $(
                         (
                             Cow::Borrowed(stringify!($field_name)),
+                            $crate::__glium_offset_of!($struct_name, $field_name),
                             {
-                                // calculate the offset of the struct fields
-                                let dummy: $struct_name = unsafe { ::std::mem::uninitialized() };
-                                let offset: usize = {
-                                    let dummy_ref = &dummy;
-                                    let field_ref = &dummy.$field_name;
-                                    (field_ref as *const _ as usize) - (dummy_ref as *const _ as usize)
-                                };
-                                // NOTE: `glium::vertex::Vertex` requires `$struct_name` to have `Copy` trait
-                                // `Copy` excludes `Drop`, so we don't have to `std::mem::forget(dummy)`
-                                offset
-                            },
-                            {
-                                fn attr_type_of_val<T: $crate::vertex::Attribute>(_: &T)
+                                // Obtain the type of the $field_name field of $struct_name and
+                                // call get_type on it.
+                                fn attr_type_of_val<T: $crate::vertex::Attribute>(_: Option<&T>)
                                     -> $crate::vertex::AttributeType
                                 {
                                     <T as $crate::vertex::Attribute>::get_type()
                                 }
-                                let dummy: &$struct_name = unsafe { ::std::mem::transmute(0usize) };
-                                attr_type_of_val(&dummy.$field_name)
+                                let field_option = None::<&$struct_name>.map(|v| &v.$field_name);
+                                attr_type_of_val(field_option)
                             },
                             false
                         )
@@ -148,20 +149,17 @@ macro_rules! implement_vertex {
                     $(
                         (
                             Cow::Borrowed(stringify!($field_name)),
+                            $crate::__glium_offset_of!($struct_name, $field_name),
                             {
-                                let dummy: &$struct_name = unsafe { ::std::mem::transmute(0usize) };
-                                let dummy_field = &dummy.$field_name;
-                                let dummy_field: usize = unsafe { ::std::mem::transmute(dummy_field) };
-                                dummy_field
-                            },
-                            {
-                                fn attr_type_of_val<T: $crate::vertex::Attribute>(_: &T)
+                                // Obtain the type of the $field_name field of $struct_name and
+                                // call get_type on it.
+                                fn attr_type_of_val<T: $crate::vertex::Attribute>(_: Option<&T>)
                                     -> $crate::vertex::AttributeType
                                 {
                                     <T as $crate::vertex::Attribute>::get_type()
                                 }
-                                let dummy: &$struct_name = unsafe { ::std::mem::transmute(0usize) };
-                                attr_type_of_val(&dummy.$field_name)
+                                let field_option = None::<&$struct_name>.map(|v| &v.$field_name);
+                                attr_type_of_val(field_option)
                             },
                             {
                                 $should_normalize
@@ -221,7 +219,7 @@ macro_rules! implement_buffer_content {
                     let storage = storage.into_boxed_slice();
                     let mut storage: Box<$struct_name<$($gs)*>> = unsafe { mem::transmute(storage) };
 
-                    try!(f(&mut storage));
+                    f(&mut storage)?;
                     Ok(storage)
                 }
 
@@ -353,16 +351,15 @@ macro_rules! implement_uniform_block {
                                     name: stringify!($field_name).to_owned(),
                                 })
                             };
-
+                            let dummy: *const $struct_name = unsafe { mem::zeroed() };
                             let input_offset = {
-                                let dummy: &$struct_name = unsafe { mem::zeroed() };
-                                let dummy_field: *const _ = &dummy.$field_name;
-                                dummy_field as *const () as usize
+                                let possibly_fat_pointer_to_field=unsafe{&(*dummy).$field_name};
+                                let pointer_to_possibly_fat_pointer_to_field:&u64=unsafe{mem::transmute( &possibly_fat_pointer_to_field )};
+                                let pointer_to_field=*pointer_to_possibly_fat_pointer_to_field;
+                                pointer_to_field as usize
                             };
 
-                            let dummy: &$struct_name = unsafe { mem::uninitialized() };
-
-                            match matches_from_ty(&dummy.$field_name, reflected_ty, input_offset) {
+                            match matches_from_ty(unsafe{&(*dummy).$field_name}, reflected_ty, input_offset) {
                                 Ok(_) => (),
                                 Err(e) => return Err(LayoutMismatchError::MemberMismatch {
                                     member: stringify!($field_name).to_owned(),
@@ -382,16 +379,13 @@ macro_rules! implement_uniform_block {
                 }
 
                 fn build_layout(base_offset: usize) -> $crate::program::BlockLayout {
-                    use std::mem;
                     use $crate::program::BlockLayout;
 
-                    fn layout_from_ty<T: $crate::uniforms::UniformBlock + ?Sized>(_: &T, base_offset: usize)
+                    fn layout_from_ty<T: $crate::uniforms::UniformBlock + ?Sized>(_: Option<&T>, base_offset: usize)
                                                                          -> BlockLayout
                     {
                         <T as $crate::uniforms::UniformBlock>::build_layout(base_offset)
                     }
-
-                    let dummy: &$struct_name = unsafe { mem::zeroed() };
 
                     BlockLayout::Struct {
                         members: vec![
@@ -399,11 +393,9 @@ macro_rules! implement_uniform_block {
                                 (
                                     stringify!($field_name).to_owned(),
                                     {
-                                        let offset = {
-                                            let dummy_field: *const _ = &dummy.$field_name;
-                                            dummy_field as *const () as usize
-                                        };
-                                        layout_from_ty(&dummy.$field_name, offset + base_offset)
+                                        let offset = $crate::__glium_offset_of!($struct_name, $field_name);
+                                        let field_option = None::<&$struct_name>.map(|v| &v.$field_name);
+                                        layout_from_ty(field_option, offset + base_offset)
                                     }
                                 ),
                             )+
@@ -435,11 +427,9 @@ macro_rules! implement_uniform_block {
 ///
 /// ## Example
 ///
-/// ```ignore       // TODO: no_run instead
-/// # #[macro_use]
-/// # extern crate glium;
-/// # fn main() {
-/// # let display: glium::Display = unsafe { std::mem::uninitialized() };
+/// ```no_run
+/// use glium::program;
+/// # fn example(display: glium::Display) {
 /// let program = program!(&display,
 ///     300 => {
 ///         vertex: r#"

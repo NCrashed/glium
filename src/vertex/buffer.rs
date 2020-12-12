@@ -1,18 +1,18 @@
 use std::error::Error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
-use utils::range::RangeArgument;
+use crate::utils::range::RangeArgument;
 
-use buffer::{Buffer, BufferSlice, BufferMutSlice, BufferAny, BufferType, BufferMode, BufferCreationError, Content};
-use vertex::{Vertex, VerticesSource, IntoVerticesSource, PerInstance};
-use vertex::format::VertexFormat;
+use crate::buffer::{Buffer, BufferSlice, BufferMutSlice, BufferAny, BufferType, BufferMode, BufferCreationError, Content};
+use crate::vertex::{Vertex, VerticesSource, PerInstance};
+use crate::vertex::format::VertexFormat;
 
-use gl;
-use GlObject;
+use crate::gl;
+use crate::GlObject;
 
-use backend::Facade;
-use version::{Api, Version};
-use CapabilitiesSource;
+use crate::backend::Facade;
+use crate::version::{Api, Version};
+use crate::CapabilitiesSource;
 
 /// Error that can happen when creating a vertex buffer.
 #[derive(Copy, Clone, Debug)]
@@ -34,21 +34,18 @@ impl From<BufferCreationError> for CreationError {
 }
 
 impl fmt::Display for CreationError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.description())
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use self::CreationError::*;
+        let desc = match self {
+            FormatNotSupported => "The vertex format is not supported by the backend",
+            BufferCreationError(_) => "Error while creating the vertex buffer",
+        };
+        fmt.write_str(desc)
     }
 }
 
 impl Error for CreationError {
-    fn description(&self) -> &str {
-        use self::CreationError::*;
-        match *self {
-            FormatNotSupported => "The vertex format is not supported by the backend",
-            BufferCreationError(_) => "Error while creating the vertex buffer",
-        }
-    }
-
-    fn cause(&self) -> Option<&Error> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         use self::CreationError::*;
         match *self {
             BufferCreationError(ref error) => Some(error),
@@ -74,7 +71,7 @@ pub struct VertexBuffer<T> where T: Copy {
 }
 
 /// Represents a slice of a `VertexBuffer`.
-pub struct VertexBufferSlice<'b, T: 'b> where T: Copy {
+pub struct VertexBufferSlice<'b, T> where T: Copy {
     buffer: BufferSlice<'b, [T]>,
     bindings: &'b VertexFormat,
 }
@@ -88,7 +85,7 @@ impl<'b, T: 'b> VertexBufferSlice<'b, T> where T: Copy + Content {
     /// The attributes are still passed to the vertex shader, but each entry is passed
     /// for each different instance.
     #[inline]
-    pub fn per_instance(&'b self) -> Result<PerInstance, InstancingNotSupported> {
+    pub fn per_instance(&'b self) -> Result<PerInstance<'_>, InstancingNotSupported> {
         // TODO: don't check this here
         if !(self.get_context().get_version() >= &Version(Api::Gl, 3, 3)) &&
             !self.get_context().get_extensions().gl_arb_instanced_arrays
@@ -111,7 +108,6 @@ impl<T> VertexBuffer<T> where T: Vertex {
     /// ```no_run
     /// # #[macro_use]
     /// # extern crate glium;
-    /// # extern crate glutin;
     /// # fn main() {
     /// #[derive(Copy, Clone)]
     /// struct Vertex {
@@ -121,11 +117,12 @@ impl<T> VertexBuffer<T> where T: Vertex {
     ///
     /// implement_vertex!(Vertex, position, texcoords);
     ///
-    /// # let display: glium::Display = unsafe { ::std::mem::uninitialized() };
+    /// # fn example(display: glium::Display) {
     /// let vertex_buffer = glium::VertexBuffer::new(&display, &[
     ///     Vertex { position: [0.0,  0.0, 0.0], texcoords: [0.0, 1.0] },
     ///     Vertex { position: [5.0, -3.0, 2.0], texcoords: [1.0, 0.0] },
     /// ]);
+    /// # }
     /// # }
     /// ```
     ///
@@ -171,7 +168,7 @@ impl<T> VertexBuffer<T> where T: Vertex {
             return Err(CreationError::FormatNotSupported);
         }
 
-        let buffer = try!(Buffer::new(facade, data, BufferType::ArrayBuffer, mode));
+        let buffer = Buffer::new(facade, data, BufferType::ArrayBuffer, mode)?;
         Ok(buffer.into())
     }
 
@@ -225,7 +222,7 @@ impl<T> VertexBuffer<T> where T: Vertex {
             return Err(CreationError::FormatNotSupported);
         }
 
-        let buffer = try!(Buffer::empty_array(facade, BufferType::ArrayBuffer, elements, mode));
+        let buffer = Buffer::empty_array(facade, BufferType::ArrayBuffer, elements, mode)?;
         Ok(buffer.into())
     }
 }
@@ -236,21 +233,20 @@ impl<T> VertexBuffer<T> where T: Copy {
     /// # Example
     ///
     /// ```no_run
-    /// # extern crate glium;
-    /// # extern crate glutin;
-    /// # fn main() {
+    /// # fn example(display: glium::Display) {
     /// use std::borrow::Cow;
     ///
     /// let bindings = Cow::Owned(vec![(
     ///         Cow::Borrowed("position"), 0,
     ///         glium::vertex::AttributeType::F32F32,
+    ///         false,
     ///     ), (
     ///         Cow::Borrowed("color"), 2 * ::std::mem::size_of::<f32>(),
     ///         glium::vertex::AttributeType::F32,
+    ///         false,
     ///     ),
     /// ]);
     ///
-    /// # let display: glium::Display = unsafe { ::std::mem::uninitialized() };
     /// let data = vec![
     ///     1.0, -0.3, 409.0,
     ///     -0.4, 2.8, 715.0f32
@@ -271,9 +267,9 @@ impl<T> VertexBuffer<T> where T: Copy {
         // FIXME: check that the format is supported
 
         Ok(VertexBuffer {
-            buffer: try!(Buffer::new(facade, data, BufferType::ArrayBuffer,
-                                         BufferMode::Default)),
-            bindings: bindings,
+            buffer: Buffer::new(facade, data, BufferType::ArrayBuffer,
+                                         BufferMode::Default)?,
+            bindings,
         })
     }
 
@@ -287,9 +283,9 @@ impl<T> VertexBuffer<T> where T: Copy {
         // FIXME: check that the format is supported
 
         Ok(VertexBuffer {
-            buffer: try!(Buffer::new(facade, data, BufferType::ArrayBuffer,
-                                         BufferMode::Dynamic)),
-            bindings: bindings,
+            buffer: Buffer::new(facade, data, BufferType::ArrayBuffer,
+                                         BufferMode::Dynamic)?,
+            bindings,
         })
     }
 
@@ -297,7 +293,7 @@ impl<T> VertexBuffer<T> where T: Copy {
     ///
     /// Returns `None` if the slice is out of range.
     #[inline]
-    pub fn slice<R: RangeArgument<usize>>(&self, range: R) -> Option<VertexBufferSlice<T>> {
+    pub fn slice<R: RangeArgument<usize>>(&self, range: R) -> Option<VertexBufferSlice<'_, T>> {
         let slice = match self.buffer.slice(range) {
             None => return None,
             Some(s) => s
@@ -322,7 +318,7 @@ impl<T> VertexBuffer<T> where T: Copy {
     /// geometry for each element in this buffer. The attributes are still passed to the
     /// vertex shader, but each entry is passed for each different instance.
     #[inline]
-    pub fn per_instance(&self) -> Result<PerInstance, InstancingNotSupported> {
+    pub fn per_instance(&self) -> Result<PerInstance<'_>, InstancingNotSupported> {
         // TODO: don't check this here
         if !(self.buffer.get_context().get_version() >= &Version(Api::Gl, 3, 3)) &&
             !self.buffer.get_context().get_extensions().gl_arb_instanced_arrays
@@ -335,10 +331,14 @@ impl<T> VertexBuffer<T> where T: Copy {
 }
 
 impl<T> VertexBuffer<T> where T: Copy + Send + 'static {
-    /// DEPRECATED: use `.into()` instead.
     /// Discard the type information and turn the vertex buffer into a `VertexBufferAny`.
     #[inline]
+    #[deprecated(note = "use .into() instead.")]
     pub fn into_vertex_buffer_any(self) -> VertexBufferAny {
+        self.into_vertex_buffer_any_inner()
+    }
+    #[inline]
+    fn into_vertex_buffer_any_inner(self) -> VertexBufferAny {
         VertexBufferAny {
             buffer: self.buffer.into(),
             bindings: self.bindings,
@@ -354,8 +354,8 @@ impl<T> From<Buffer<[T]>> for VertexBuffer<T> where T: Vertex + Copy {
         let bindings = <T as Vertex>::build_bindings();
 
         VertexBuffer {
-            buffer: buffer,
-            bindings: bindings,
+            buffer,
+            bindings,
         }
     }
 }
@@ -392,9 +392,9 @@ impl<'a, T> From<&'a mut VertexBuffer<T>> for BufferMutSlice<'a, [T]> where T: C
     }
 }
 
-impl<'a, T> IntoVerticesSource<'a> for &'a VertexBuffer<T> where T: Copy {
+impl<'a, T> Into<VerticesSource<'a>> for &'a VertexBuffer<T> where T: Copy {
     #[inline]
-    fn into_vertices_source(self) -> VerticesSource<'a> {
+    fn into(self) -> VerticesSource<'a> {
         VerticesSource::VertexBuffer(self.buffer.as_slice_any(), &self.bindings, false)
     }
 }
@@ -422,9 +422,9 @@ impl<'a, T> From<VertexBufferSlice<'a, T>> for BufferSlice<'a, [T]> where T: Cop
     }
 }
 
-impl<'a, T> IntoVerticesSource<'a> for VertexBufferSlice<'a, T> where T: Copy {
+impl<'a, T> Into<VerticesSource<'a>> for VertexBufferSlice<'a, T> where T: Copy {
     #[inline]
-    fn into_vertices_source(self) -> VerticesSource<'a> {
+    fn into(self) -> VerticesSource<'a> {
         VerticesSource::VertexBuffer(self.buffer.as_slice_any(), &self.bindings, false)
     }
 }
@@ -474,7 +474,7 @@ impl VertexBufferAny {
     /// geometry for each element in this buffer. The attributes are still passed to the
     /// vertex shader, but each entry is passed for each different instance.
     #[inline]
-    pub fn per_instance(&self) -> Result<PerInstance, InstancingNotSupported> {
+    pub fn per_instance(&self) -> Result<PerInstance<'_>, InstancingNotSupported> {
         // TODO: don't check this here
         if !(self.buffer.get_context().get_version() >= &Version(Api::Gl, 3, 3)) &&
             !self.buffer.get_context().get_extensions().gl_arb_instanced_arrays
@@ -489,7 +489,7 @@ impl VertexBufferAny {
 impl<T> From<VertexBuffer<T>> for VertexBufferAny where T: Copy + Send + 'static {
     #[inline]
     fn from(buf: VertexBuffer<T>) -> VertexBufferAny {
-        buf.into_vertex_buffer_any()
+        buf.into_vertex_buffer_any_inner()
     }
 }
 
@@ -497,13 +497,29 @@ impl<T> From<Buffer<[T]>> for VertexBufferAny where T: Vertex + Copy + Send + 's
     #[inline]
     fn from(buf: Buffer<[T]>) -> VertexBufferAny {
         let buf: VertexBuffer<T> = buf.into();
-        buf.into_vertex_buffer_any()
+        buf.into_vertex_buffer_any_inner()
     }
 }
 
-impl<'a> IntoVerticesSource<'a> for &'a VertexBufferAny {
+impl Deref for VertexBufferAny {
+    type Target = BufferAny;
+
     #[inline]
-    fn into_vertices_source(self) -> VerticesSource<'a> {
+    fn deref(&self) -> &BufferAny {
+        &self.buffer
+    }
+}
+
+impl DerefMut for VertexBufferAny {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut BufferAny {
+        &mut self.buffer
+    }
+}
+
+impl<'a> Into<VerticesSource<'a>> for &'a VertexBufferAny {
+    #[inline]
+    fn into(self) -> VerticesSource<'a> {
         VerticesSource::VertexBuffer(self.buffer.as_slice_any(), &self.bindings, false)
     }
 }

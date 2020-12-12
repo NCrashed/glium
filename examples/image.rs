@@ -1,9 +1,9 @@
 #[macro_use]
 extern crate glium;
-extern crate image;
 
 use std::io::Cursor;
 
+#[allow(unused_imports)]
 use glium::{glutin, Surface};
 use glium::index::PrimitiveType;
 
@@ -11,14 +11,14 @@ mod support;
 
 fn main() {
     // building the display, ie. the main object
-    let mut events_loop = glutin::EventsLoop::new();
-    let window = glutin::WindowBuilder::new();
-    let context = glutin::ContextBuilder::new().with_vsync(true);
-    let display = glium::Display::new(window, context, &events_loop).unwrap();
+    let event_loop = glutin::event_loop::EventLoop::new();
+    let wb = glutin::window::WindowBuilder::new();
+    let cb = glutin::ContextBuilder::new().with_vsync(true);
+    let display = glium::Display::new(wb, cb, &event_loop).unwrap();
 
     // building a texture with "OpenGL" drawn on it
     let image = image::load(Cursor::new(&include_bytes!("../tests/fixture/opengl.png")[..]),
-                            image::PNG).unwrap().to_rgba();
+                            image::ImageFormat::Png).unwrap().to_rgba8();
     let image_dimensions = image.dimensions();
     let image = glium::texture::RawImage2d::from_raw_rgba_reversed(&image.into_raw(), image_dimensions);
     let opengl_texture = glium::texture::CompressedSrgbTexture2d::new(&display, image).unwrap();
@@ -33,7 +33,7 @@ fn main() {
 
         implement_vertex!(Vertex, position, tex_coords);
 
-        glium::VertexBuffer::new(&display, 
+        glium::VertexBuffer::new(&display,
             &[
                 Vertex { position: [-1.0, -1.0], tex_coords: [0.0, 0.0] },
                 Vertex { position: [-1.0,  1.0], tex_coords: [0.0, 1.0] },
@@ -78,7 +78,7 @@ fn main() {
             "
         },
 
-        110 => {  
+        110 => {
             vertex: "
                 #version 110
 
@@ -106,7 +106,7 @@ fn main() {
             ",
         },
 
-        100 => {  
+        100 => {
             vertex: "
                 #version 100
 
@@ -134,9 +134,9 @@ fn main() {
             ",
         },
     ).unwrap();
-    
+
     // the main loop
-    support::start_loop(|| {
+    support::start_loop(event_loop, move |events| {
         // building the uniforms
         let uniforms = uniform! {
             matrix: [
@@ -156,15 +156,15 @@ fn main() {
 
         // polling and handling the events received by the window
         let mut action = support::Action::Continue;
-        events_loop.poll_events(|event| {
+        for event in events {
             match event {
-                glutin::Event::WindowEvent { event, .. } => match event {
-                    glutin::WindowEvent::Closed => action = support::Action::Stop,
+                glutin::event::Event::WindowEvent { event, .. } => match event {
+                    glutin::event::WindowEvent::CloseRequested => action = support::Action::Stop,
                     _ => ()
                 },
                 _ => (),
             }
-        });
+        };
 
         action
     });

@@ -1,11 +1,22 @@
 #[macro_use]
 extern crate glium;
-extern crate rand;
+
+#[allow(unused_imports)]
 use glium::glutin;
+use crate::glutin::dpi::PhysicalSize;
 
 fn main() {
-    let context = glutin::HeadlessRendererBuilder::new(1024, 1024).build().unwrap();
-    let display = glium::HeadlessRenderer::new(context).unwrap();
+    let event_loop = glium::glutin::event_loop::EventLoop::new();
+    let cb = glutin::ContextBuilder::new();
+    let size = PhysicalSize {
+        width: 800,
+        height: 600,
+    };
+    let context = cb.build_headless(&event_loop, size).unwrap();
+    let context = unsafe {
+        context.treat_as_current()
+    };
+    let display = glium::backend::glutin::headless::Headless::new(context).unwrap();
 
     let program = glium::program::ComputeShader::from_source(&display, r#"\
 
@@ -14,35 +25,37 @@ fn main() {
 
             layout(std140) buffer MyBlock {
                 float power;
-                float values[256];
+                vec4 values[4096/4];
             };
 
             void main() {
-                float val = values[gl_GlobalInvocationID.x];
-                values[gl_GlobalInvocationID.x] = pow(val, power);
+                vec4 val = values[gl_GlobalInvocationID.x];
+
+                values[gl_GlobalInvocationID.x] = pow(val, vec4(power));
             }
 
         "#).unwrap();
 
+    const NUM_VALUES: usize = 4096;
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
     struct Data {
         power: f32,
         _padding: [f32; 3],
-        values: [f32],
+        values: [[f32;4]; NUM_VALUES],
     }
 
-    implement_buffer_content!(Data);
     implement_uniform_block!(Data, power, values);
 
-    const NUM_VALUES: usize = 4096;
-
     let mut buffer: glium::uniforms::UniformBuffer<Data> =
-              glium::uniforms::UniformBuffer::empty_unsized(&display, 4 + 4 * NUM_VALUES).unwrap();
+              glium::uniforms::UniformBuffer::empty(&display).unwrap();
 
     {
         let mut mapping = buffer.map();
         mapping.power = rand::random();
         for val in mapping.values.iter_mut() {
-            *val = rand::random();
+            *val = [rand::random::<f32>(),rand::random::<f32>(),rand::random::<f32>(),rand::random::<f32>()];
         }
     }
 
@@ -51,8 +64,11 @@ fn main() {
     {
         let mapping = buffer.map();
         println!("Power is: {:?}", mapping.power);
-        for val in mapping.values.iter().take(10) {
-            println!("{:?}", *val);
+        for val in mapping.values.iter().take(3) {
+            println!("{:?}", val[0]);
+            println!("{:?}", val[1]);
+            println!("{:?}", val[2]);
+            println!("{:?}", val[3]);
         }
         println!("...");
     }

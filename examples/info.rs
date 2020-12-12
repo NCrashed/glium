@@ -1,13 +1,12 @@
-extern crate glium;
-
 fn main() {
+    #[allow(unused_imports)]
     use glium::{glutin, Api, Profile, Version};
 
     // building the display, ie. the main object
-    let events_loop = glutin::EventsLoop::new();
-    let window = glutin::WindowBuilder::new().with_visibility(false);
-    let context = glutin::ContextBuilder::new();
-    let display = glium::Display::new(window, context, &events_loop).unwrap();
+    let event_loop = glutin::event_loop::EventLoop::new();
+    let wb = glutin::window::WindowBuilder::new().with_visible(false);
+    let cb = glutin::ContextBuilder::new();
+    let display = glium::Display::new(wb, cb, &event_loop).unwrap();
 
     let version = *display.get_opengl_version();
     let api = match version {
@@ -15,7 +14,7 @@ fn main() {
         Version(Api::GlEs, _, _) => "OpenGL ES"
     };
 
-    println!("{} context verson: {}", api, display.get_opengl_version_string());
+    println!("{} context version: {}", api, display.get_opengl_version_string());
 
     print!("{} context flags:", api);
     if display.is_forward_compatible() {
@@ -44,7 +43,7 @@ fn main() {
              } else {
                  "none"
              });
-    
+
     println!("{} context renderer: {}", api, display.get_opengl_renderer_string());
     println!("{} context vendor: {}", api, display.get_opengl_vendor_string());
 }

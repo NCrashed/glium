@@ -25,10 +25,10 @@
 //! `implement_buffer_content!` macro on them. You must then use the `empty_unsized` constructor.
 //!
 //! ```no_run
-//! # #[macro_use] extern crate glium; fn main() {
+//! # #[macro_use] extern crate glium;
+//! # fn example(display: glium::Display) {
 //! # use std::mem;
 //! # use glium::buffer::{BufferType, BufferMode};
-//! # let display: glium::Display = unsafe { mem::uninitialized() };
 //! struct Data {
 //!     data: [f32],        // `[f32]` is unsized, therefore `Data` is unsized too
 //! }
@@ -50,18 +50,23 @@ pub use self::alloc::{Mapping, WriteMapping, ReadMapping, ReadError, CopyError};
 pub use self::alloc::{is_buffer_read_supported};
 pub use self::fences::Inserter;
 
-/// DEPRECATED. Only here for backward compatibility.
+/// DEPRECATED. Only here for backwards compatibility.
+#[deprecated(note = "Only here for backwards compatibility")]
 pub use self::view::Buffer as BufferView;
-/// DEPRECATED. Only here for backward compatibility.
+/// DEPRECATED. Only here for backwards compatibility.
+#[deprecated(note = "Only here for backwards compatibility")]
 pub use self::view::BufferSlice as BufferViewSlice;
-/// DEPRECATED. Only here for backward compatibility.
+/// DEPRECATED. Only here for backwards compatibility.
+#[deprecated(note = "Only here for backwards compatibility")]
 pub use self::view::BufferMutSlice as BufferViewMutSlice;
-/// DEPRECATED. Only here for backward compatibility.
+/// DEPRECATED. Only here for backwards compatibility.
+#[deprecated(note = "Only here for backwards compatibility")]
 pub use self::view::BufferAny as BufferViewAny;
-/// DEPRECATED. Only here for backward compatibility.
+/// DEPRECATED. Only here for backwards compatibility.
+#[deprecated(note = "Only here for backwards compatibility")]
 pub use self::view::BufferAnySlice as BufferViewAnySlice;
 
-use gl;
+use crate::gl;
 use std::error::Error;
 use std::fmt;
 use std::mem;
@@ -77,7 +82,7 @@ pub unsafe trait Content {
     type Owned;
 
     /// Prepares an output buffer, then turns this buffer into an `Owned`.
-    fn read<F, E>(size: usize, F) -> Result<Self::Owned, E>
+    fn read<F, E>(size: usize, _: F) -> Result<Self::Owned, E>
                   where F: FnOnce(&mut Self) -> Result<(), E>;
 
     /// Returns the size of each element.
@@ -90,7 +95,7 @@ pub unsafe trait Content {
     fn ref_from_ptr<'a>(ptr: *mut (), size: usize) -> Option<*mut Self>;
 
     /// Returns true if the size is suitable to store a type like this.
-    fn is_size_suitable(usize) -> bool;
+    fn is_size_suitable(_: usize) -> bool;
 }
 
 unsafe impl<T> Content for T where T: Copy {
@@ -99,8 +104,12 @@ unsafe impl<T> Content for T where T: Copy {
     #[inline]
     fn read<F, E>(size: usize, f: F) -> Result<T, E> where F: FnOnce(&mut T) -> Result<(), E> {
         assert!(size == mem::size_of::<T>());
-        let mut value = unsafe { mem::uninitialized() };
-        try!(f(&mut value));
+        // Note(Lokathor): This is brittle and dangerous if `T` isn't a type
+        // that can be zeroed. However, it's a breaking change to adjust the API
+        // here (eg: extra trait bound or something) so someone with more
+        // authority than me needs to look at and fix this.
+        let mut value = unsafe { mem::zeroed() };
+        f(&mut value)?;
         Ok(value)
     }
 
@@ -140,7 +149,7 @@ unsafe impl<T> Content for [T] where T: Copy {
         let len = size / mem::size_of::<T>();
         let mut value = Vec::with_capacity(len);
         unsafe { value.set_len(len) };
-        try!(f(&mut value));
+        f(&mut value)?;
         Ok(value)
     }
 
@@ -182,19 +191,16 @@ pub enum BufferCreationError {
 }
 
 impl fmt::Display for BufferCreationError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.description())
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let desc = match self {
+            BufferCreationError::OutOfMemory => "Not enough memory to create the buffer",
+            BufferCreationError::BufferTypeNotSupported => "This type of buffer is not supported",
+        };
+        fmt.write_str(desc)
     }
 }
 
-impl Error for BufferCreationError {
-    fn description(&self) -> &str {
-        match self {
-            &BufferCreationError::OutOfMemory => "Not enough memory to create the buffer",
-            &BufferCreationError::BufferTypeNotSupported => "This type of buffer is not supported",
-        }
-    }
-}
+impl Error for BufferCreationError {}
 
 /// How the buffer is created.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -213,7 +219,7 @@ pub enum BufferMode {
     ///
     Default,
 
-    /// The mode to use when you modify a buffer multiple times per frame. Simiar to `Default` in
+    /// The mode to use when you modify a buffer multiple times per frame. Similar to `Default` in
     /// that it is suitable for most usages.
     ///
     /// Use this if you do a quick succession of modify the buffer, draw, modify, draw, etc. This

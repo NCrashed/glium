@@ -1,11 +1,11 @@
 use std::cmp::Ordering;
 use std::ffi::CStr;
-use gl;
+use crate::gl;
 
 /// Describes a version.
 ///
 /// A version can only be compared to another version if they belong to the same API.
-/// For example, both `Version(Gl, 3, 0) >= Version(GlEs, 3, 0)` and `Version(GlEs, 3, 0) >= 
+/// For example, both `Version(Gl, 3, 0) >= Version(GlEs, 3, 0)` and `Version(GlEs, 3, 0) >=
 /// Version(Gl, 3, 0)` return `false`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Version(pub Api, pub u8, pub u8);
@@ -103,7 +103,7 @@ pub fn get_supported_glsl_version(gl_version: &Version) -> Version {
 
             // only other valid GLES version is 2.0
             if *gl_version == Version(gl_version.0, 2, 0){
-                return Version(Api::GlEs, 1, 0);
+                Version(Api::GlEs, 1, 0)
             } else {
                 panic!("no corresponding glsl version exists")
             }

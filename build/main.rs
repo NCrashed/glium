@@ -1,5 +1,3 @@
-extern crate gl_generator;
-
 use gl_generator::{Registry, Api, Profile, Fallbacks};
 use std::env;
 use std::fs::File;
@@ -15,17 +13,8 @@ fn main() {
     textures::build_texture_file(&mut File::create(&dest.join("textures.rs")).unwrap());
     println!("cargo:rerun-if-changed=build/main.rs");
 
-
-    // There is a `#[derive(Clone)]` line in the bindings that triggers a stack overflow
-    // in rustc (https://github.com/rust-lang/rust/issues/26467).
-    // Therefore we write the bindings to memory first, then remove this line, and then copy
-    // to the file.
-    let mut gl_bindings = Vec::new();
-    generate_gl_bindings(&mut gl_bindings);
-    let gl_bindings = String::from_utf8(gl_bindings).unwrap();
-    let gl_bindings = gl_bindings.replace("#[derive(Clone)]", "");
     let mut file_output = File::create(&dest.join("gl_bindings.rs")).unwrap();
-    file_output.write_all(&gl_bindings.into_bytes()).unwrap();
+    generate_gl_bindings(&mut file_output);
 }
 
 fn generate_gl_bindings<W>(dest: &mut W) where W: Write {
@@ -58,6 +47,7 @@ fn generate_gl_bindings<W>(dest: &mut W) where W: Write {
             "GL_ARB_occlusion_query",
             "GL_ARB_pixel_buffer_object",
             "GL_ARB_robustness",
+            "GL_ARB_seamless_cube_map",
             "GL_ARB_shader_image_load_store",
             "GL_ARB_shader_objects",
             "GL_ARB_texture_buffer_object",

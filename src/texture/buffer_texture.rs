@@ -58,26 +58,26 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::error::Error;
 
-use gl;
-use version::Version;
-use version::Api;
-use backend::Facade;
-use context::Context;
-use context::CommandContext;
-use ContextExt;
-use GlObject;
+use crate::gl;
+use crate::version::Version;
+use crate::version::Api;
+use crate::backend::Facade;
+use crate::context::Context;
+use crate::context::CommandContext;
+use crate::ContextExt;
+use crate::GlObject;
 
-use TextureExt;
+use crate::TextureExt;
 
-use BufferExt;
-use buffer::BufferMode;
-use buffer::BufferType;
-use buffer::Buffer;
-use buffer::BufferCreationError;
-use buffer::Content as BufferContent;
+use crate::BufferExt;
+use crate::buffer::BufferMode;
+use crate::buffer::BufferType;
+use crate::buffer::Buffer;
+use crate::buffer::BufferCreationError;
+use crate::buffer::Content as BufferContent;
 
-use uniforms::AsUniformValue;
-use uniforms::UniformValue;
+use crate::uniforms::AsUniformValue;
+use crate::uniforms::UniformValue;
 
 /// Error that can happen while building the texture part of a buffer texture.
 #[derive(Copy, Clone, Debug)]
@@ -93,24 +93,21 @@ pub enum TextureCreationError {
 }
 
 impl fmt::Display for TextureCreationError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.description())
-    }
-}
-
-impl Error for TextureCreationError {
-    fn description(&self) -> &str {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         use self::TextureCreationError::*;
-        match *self {
+        let desc = match *self {
             NotSupported =>
                 "Buffer textures are not supported at all",
             FormatNotSupported =>
                 "The requested format is not supported in combination with the given texture buffer type",
             TooLarge =>
                 "The size of the buffer that you are trying to bind exceeds `GL_MAX_TEXTURE_BUFFER_SIZE`",
-        }
+        };
+        fmt.write_str(desc)
     }
 }
+
+impl Error for TextureCreationError {}
 
 /// Error that can happen while building a buffer texture.
 #[derive(Copy, Clone, Debug)]
@@ -123,23 +120,20 @@ pub enum CreationError {
 }
 
 impl fmt::Display for CreationError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.description())
-    }
-}
-
-impl Error for CreationError {
-    fn description(&self) -> &str {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         use self::CreationError::*;
-        match *self {
+        let desc = match *self {
             BufferCreationError(_) =>
                 "Failed to create the buffer",
             TextureCreationError(_) =>
                 "Failed to create the texture",
-        }
+        };
+        fmt.write_str(desc)
     }
+}
 
-    fn cause(&self) -> Option<&Error> {
+impl Error for CreationError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         use self::CreationError::*;
         match *self {
             BufferCreationError(ref err) => Some(err),
@@ -231,7 +225,7 @@ impl<T> BufferTexture<T> where [T]: BufferContent, T: TextureBufferContent + Cop
                    -> Result<BufferTexture<T>, CreationError>
                    where F: Facade
     {
-        let buffer = try!(Buffer::new(facade, data, BufferType::TextureBuffer, mode));
+        let buffer = Buffer::new(facade, data, BufferType::TextureBuffer, mode)?;
         BufferTexture::from_buffer(facade, buffer, ty).map_err(|(e, _)| e.into())
     }
 
@@ -276,7 +270,7 @@ impl<T> BufferTexture<T> where [T]: BufferContent, T: TextureBufferContent + Cop
                      -> Result<BufferTexture<T>, CreationError>
                      where F: Facade
     {
-        let buffer = try!(Buffer::empty_array(facade, BufferType::TextureBuffer, len, mode));
+        let buffer = Buffer::empty_array(facade, BufferType::TextureBuffer, len, mode)?;
         BufferTexture::from_buffer(facade, buffer, ty).map_err(|(e, _)| e.into())
     }
 
@@ -397,7 +391,7 @@ impl<T> BufferTexture<T> where [T]: BufferContent, T: TextureBufferContent + Cop
                     ctxt.extensions.gl_arb_direct_state_access
         {
             unsafe {
-                let mut id = mem::uninitialized();
+                let mut id = 0;
                 ctxt.gl.CreateTextures(gl::TEXTURE_BUFFER, 1, &mut id);
                 ctxt.gl.TextureBuffer(id, internal_format, buffer.get_id());
                 id
@@ -406,7 +400,7 @@ impl<T> BufferTexture<T> where [T]: BufferContent, T: TextureBufferContent + Cop
         } else {
             // reserving the ID
             let id = unsafe {
-                let mut id = mem::uninitialized();
+                let mut id = 0;
                 ctxt.gl.GenTextures(1, &mut id);
                 id
             };
@@ -453,8 +447,8 @@ impl<T> BufferTexture<T> where [T]: BufferContent, T: TextureBufferContent + Cop
         };
 
         Ok(BufferTexture {
-            buffer: buffer,
-            ty: ty,
+            buffer,
+            ty,
             texture: id,
         })
     }
@@ -494,7 +488,7 @@ impl<T> Drop for BufferTexture<T> where [T]: BufferContent {
 impl<T> BufferTexture<T> where [T]: BufferContent {
     /// Builds a `BufferTextureRef`.
     #[inline]
-    pub fn as_buffer_texture_ref(&self) -> BufferTextureRef {
+    pub fn as_buffer_texture_ref(&self) -> BufferTextureRef<'_> {
         BufferTextureRef {
             texture: self.texture,
             ty: self.ty,
@@ -505,7 +499,7 @@ impl<T> BufferTexture<T> where [T]: BufferContent {
 
 impl<T> AsUniformValue for BufferTexture<T> where [T]: BufferContent {
     #[inline]
-    fn as_uniform_value(&self) -> UniformValue {
+    fn as_uniform_value(&self) -> UniformValue<'_> {
         // FIXME: handle `glMemoryBarrier` for the buffer
         UniformValue::BufferTexture(self.as_buffer_texture_ref())
     }
@@ -513,7 +507,7 @@ impl<T> AsUniformValue for BufferTexture<T> where [T]: BufferContent {
 
 impl<'a, T: 'a> AsUniformValue for &'a BufferTexture<T> where [T]: BufferContent {
     #[inline]
-    fn as_uniform_value(&self) -> UniformValue {
+    fn as_uniform_value(&self) -> UniformValue<'_> {
         // FIXME: handle `glMemoryBarrier` for the buffer
         UniformValue::BufferTexture(self.as_buffer_texture_ref())
     }
@@ -552,7 +546,7 @@ impl<'a> TextureExt for BufferTextureRef<'a> {
     }
 
     #[inline]
-    fn bind_to_current(&self, ctxt: &mut CommandContext) -> gl::types::GLenum {
+    fn bind_to_current(&self, ctxt: &mut CommandContext<'_>) -> gl::types::GLenum {
         unsafe { ctxt.gl.BindTexture(gl::TEXTURE_BUFFER, self.texture); }
         gl::TEXTURE_BUFFER
     }
@@ -648,7 +642,21 @@ unsafe impl TextureBufferContent for (u8, u8) {
     }
 }
 
+unsafe impl TextureBufferContent for [u8; 2] {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::U8U8
+    }
+}
+
 unsafe impl TextureBufferContent for (i8, i8) {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::I8I8
+    }
+}
+
+unsafe impl TextureBufferContent for [i8; 2] {
     #[inline]
     fn get_type() -> TextureBufferContentType {
         TextureBufferContentType::I8I8
@@ -662,7 +670,21 @@ unsafe impl TextureBufferContent for (u16, u16) {
     }
 }
 
+unsafe impl TextureBufferContent for [u16; 2] {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::U16U16
+    }
+}
+
 unsafe impl TextureBufferContent for (i16, i16) {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::I16I16
+    }
+}
+
+unsafe impl TextureBufferContent for [i16; 2] {
     #[inline]
     fn get_type() -> TextureBufferContentType {
         TextureBufferContentType::I16I16
@@ -676,7 +698,21 @@ unsafe impl TextureBufferContent for (u32, u32) {
     }
 }
 
+unsafe impl TextureBufferContent for [u32; 2] {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::U32U32
+    }
+}
+
 unsafe impl TextureBufferContent for (i32, i32) {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::I32I32
+    }
+}
+
+unsafe impl TextureBufferContent for [i32; 2] {
     #[inline]
     fn get_type() -> TextureBufferContentType {
         TextureBufferContentType::I32I32
@@ -690,7 +726,21 @@ unsafe impl TextureBufferContent for (u32, u32, u32) {
     }
 }
 
+unsafe impl TextureBufferContent for [u32; 3] {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::U32U32U32
+    }
+}
+
 unsafe impl TextureBufferContent for (i32, i32, i32) {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::I32I32I32
+    }
+}
+
+unsafe impl TextureBufferContent for [i32; 3] {
     #[inline]
     fn get_type() -> TextureBufferContentType {
         TextureBufferContentType::I32I32I32
@@ -704,7 +754,21 @@ unsafe impl TextureBufferContent for (u8, u8, u8, u8) {
     }
 }
 
+unsafe impl TextureBufferContent for [u8; 4] {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::U8U8U8U8
+    }
+}
+
 unsafe impl TextureBufferContent for (i8, i8, i8, i8) {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::I8I8I8I8
+    }
+}
+
+unsafe impl TextureBufferContent for [i8; 4] {
     #[inline]
     fn get_type() -> TextureBufferContentType {
         TextureBufferContentType::I8I8I8I8
@@ -718,7 +782,21 @@ unsafe impl TextureBufferContent for (u16, u16, u16, u16) {
     }
 }
 
+unsafe impl TextureBufferContent for [u16; 4] {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::U16U16U16U16
+    }
+}
+
 unsafe impl TextureBufferContent for (i16, i16, i16, i16) {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::I16I16I16I16
+    }
+}
+
+unsafe impl TextureBufferContent for [i16; 4] {
     #[inline]
     fn get_type() -> TextureBufferContentType {
         TextureBufferContentType::I16I16I16I16
@@ -732,7 +810,21 @@ unsafe impl TextureBufferContent for (u32, u32, u32, u32) {
     }
 }
 
+unsafe impl TextureBufferContent for [u32; 4] {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::U32U32U32U32
+    }
+}
+
 unsafe impl TextureBufferContent for (i32, i32, i32, i32) {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::I32I32I32I32
+    }
+}
+
+unsafe impl TextureBufferContent for [i32; 4] {
     #[inline]
     fn get_type() -> TextureBufferContentType {
         TextureBufferContentType::I32I32I32I32
@@ -753,6 +845,13 @@ unsafe impl TextureBufferContent for (f32, f32) {
     }
 }
 
+unsafe impl TextureBufferContent for [f32; 2] {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::F32F32
+    }
+}
+
 unsafe impl TextureBufferContent for (f32, f32, f32) {
     #[inline]
     fn get_type() -> TextureBufferContentType {
@@ -760,7 +859,21 @@ unsafe impl TextureBufferContent for (f32, f32, f32) {
     }
 }
 
+unsafe impl TextureBufferContent for [f32; 3] {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::F32F32F32
+    }
+}
+
 unsafe impl TextureBufferContent for (f32, f32, f32, f32) {
+    #[inline]
+    fn get_type() -> TextureBufferContentType {
+        TextureBufferContentType::F32F32F32F32
+    }
+}
+
+unsafe impl TextureBufferContent for [f32; 4] {
     #[inline]
     fn get_type() -> TextureBufferContentType {
         TextureBufferContentType::F32F32F32F32

@@ -1,18 +1,18 @@
-use fbo::{self, ValidatedAttachments};
+use crate::fbo::{self, ValidatedAttachments};
 
-use context::Context;
-use ContextExt;
-use Rect;
+use crate::context::Context;
+use crate::ContextExt;
+use crate::Rect;
 
-use QueryExt;
-use draw_parameters::TimeElapsedQuery;
+use crate::QueryExt;
+use crate::draw_parameters::TimeElapsedQuery;
 
-use Api;
-use version::Version;
-use gl;
+use crate::Api;
+use crate::version::Version;
+use crate::gl;
 
 
-pub fn clear(context: &Context, framebuffer: Option<&ValidatedAttachments>,
+pub fn clear(context: &Context, framebuffer: Option<&ValidatedAttachments<'_>>,
              rect: Option<&Rect>, color: Option<(f32, f32, f32, f32)>, color_srgb: bool,
              depth: Option<f32>, stencil: Option<i32>)
 {
@@ -31,7 +31,7 @@ pub fn clear(context: &Context, framebuffer: Option<&ValidatedAttachments>,
             ctxt.state.color_mask = (1, 1, 1, 1);
             ctxt.gl.ColorMask(1, 1, 1, 1);
         }
-    
+
         if ctxt.version >= &Version(Api::Gl, 3, 0) || ctxt.extensions.gl_arb_framebuffer_srgb ||
            ctxt.extensions.gl_ext_framebuffer_srgb || ctxt.extensions.gl_ext_srgb_write_control
         {
@@ -61,11 +61,9 @@ pub fn clear(context: &Context, framebuffer: Option<&ValidatedAttachments>,
                 ctxt.state.enabled_scissor_test = true;
             }
 
-        } else {
-            if ctxt.state.enabled_scissor_test {
-                ctxt.gl.Disable(gl::SCISSOR_TEST);
-                ctxt.state.enabled_scissor_test = false;
-            }
+        } else if ctxt.state.enabled_scissor_test {
+            ctxt.gl.Disable(gl::SCISSOR_TEST);
+            ctxt.state.enabled_scissor_test = false;
         }
 
         let mut flags = 0;

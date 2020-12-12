@@ -15,24 +15,24 @@ use std::env;
 #[cfg(not(feature = "test_headless"))]
 pub fn build_display() -> glium::Display {
     let version = parse_version();
-    let events_loop = glutin::EventsLoop::new();
-    let window = glutin::WindowBuilder::new().with_visibility(false);
-    let context = glutin::ContextBuilder::new()
+    let event_loop = glutin::event_loop::EventLoop::new();
+    let wb = glutin::window::WindowBuilder::new().with_visible(false);
+    let cb = glutin::ContextBuilder::new()
         .with_gl_debug_flag(true)
         .with_gl(version);
-    glium::Display::new(window, context, &events_loop).unwrap()
+    glium::Display::new(wb, cb, &event_loop).unwrap()
 }
 
 /// Builds a headless display for tests.
 #[cfg(feature = "test_headless")]
 pub fn build_display() -> glium::HeadlessRenderer {
     let version = parse_version();
-    let context = glutin::HeadlessRendererBuilder::new(1024, 768)
+    let hrb = glutin::HeadlessRendererBuilder::new(1024, 768)
         .with_gl_debug_flag(true)
         .with_gl(version)
         .build()
         .unwrap();
-    glium::HeadlessRenderer::new(context).unwrap()
+    glium::HeadlessRenderer::new(hrb).unwrap()
 }
 
 /// Rebuilds an existing display.
@@ -41,12 +41,12 @@ pub fn build_display() -> glium::HeadlessRenderer {
 /// invalidated during a rebuild, and this has to be handled by glium.
 pub fn rebuild_display(display: &glium::Display) {
     let version = parse_version();
-    let events_loop = glutin::EventsLoop::new();
-    let window = glutin::WindowBuilder::new().with_visibility(false);
-    let context = glutin::ContextBuilder::new()
+    let event_loop = glutin::event_loop::EventLoop::new();
+    let wb = glutin::window::WindowBuilder::new().with_visible(false);
+    let cb = glutin::ContextBuilder::new()
         .with_gl_debug_flag(true)
         .with_gl(version);
-    display.rebuild(window, context, &events_loop).unwrap();
+    display.rebuild(wb, cb, &event_loop).unwrap();
 }
 
 fn parse_version() -> glutin::GlRequest {
@@ -106,7 +106,7 @@ pub fn build_fullscreen_red_pipeline<F: ?Sized>(facade: &F) -> (glium::vertex::V
         glium::VertexBuffer::new(facade, &[
             Vertex { position: [-1.0,  1.0] }, Vertex { position: [1.0,  1.0] },
             Vertex { position: [-1.0, -1.0] }, Vertex { position: [1.0, -1.0] },
-        ]).unwrap().into_vertex_buffer_any(),
+        ]).unwrap().into(),
 
         glium::IndexBuffer::new(facade, PrimitiveType::TriangleStrip, &[0u8, 1, 2, 3]).unwrap().into(),
 
@@ -168,7 +168,7 @@ pub fn build_rectangle_vb_ib<F: ?Sized>(facade: &F)
         glium::VertexBuffer::new(facade, &[
             Vertex { position: [-1.0,  1.0] }, Vertex { position: [1.0,  1.0] },
             Vertex { position: [-1.0, -1.0] }, Vertex { position: [1.0, -1.0] },
-        ]).unwrap().into_vertex_buffer_any(),
+        ]).unwrap().into(),
 
         glium::IndexBuffer::new(facade, PrimitiveType::TriangleStrip, &[0u8, 1, 2, 3]).unwrap().into(),
     )

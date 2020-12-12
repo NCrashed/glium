@@ -29,15 +29,15 @@ In addition to indices, you can also use **multidraw indirect** rendering.
 The idea is to put a list of things to render in a buffer, and pass that buffer to OpenGL.
 
 */
-use gl;
-use ToGlEnum;
-use CapabilitiesSource;
-use version::Api;
-use version::Version;
+use crate::gl;
+use crate::ToGlEnum;
+use crate::CapabilitiesSource;
+use crate::version::Api;
+use crate::version::Version;
 
 use std::mem;
 
-use buffer::BufferAnySlice;
+use crate::buffer::BufferAnySlice;
 
 pub use self::buffer::{IndexBuffer, IndexBufferSlice, IndexBufferAny};
 pub use self::buffer::CreationError as BufferCreationError;
@@ -107,7 +107,7 @@ impl<'a> IndicesSource<'a> {
 /// type](https://msdn.microsoft.com/en-us/library/windows/desktop/bb205124%28v=vs.85%29.aspx).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimitiveType {
-    /// Each vertex is an invidiual point.
+    /// Each vertex is an individual point.
     Points,
 
     /// Vertices are grouped by chunks of two vertices. Each chunk represents a line.

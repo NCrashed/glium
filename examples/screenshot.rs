@@ -1,17 +1,16 @@
 #[macro_use]
 extern crate glium;
-extern crate image;
 
+#[allow(unused_imports)]
 use glium::{glutin, Surface};
 use glium::index::PrimitiveType;
-use std::path::Path;
 
 fn main() {
     // building the display, ie. the main object
-    let events_loop = glutin::EventsLoop::new();
-    let window = glutin::WindowBuilder::new().with_visibility(false);
-    let context = glutin::ContextBuilder::new();
-    let display = glium::Display::new(window, context, &events_loop).unwrap();
+    let event_loop = glutin::event_loop::EventLoop::new();
+    let wb = glutin::window::WindowBuilder::new().with_visible(true);
+    let cb = glutin::ContextBuilder::new();
+    let display = glium::Display::new(wb, cb, &event_loop).unwrap();
 
     // building the vertex buffer, which contains all the vertices that we will draw
     let vertex_buffer = {
@@ -23,7 +22,7 @@ fn main() {
 
         implement_vertex!(Vertex, position, color);
 
-        glium::VertexBuffer::new(&display, 
+        glium::VertexBuffer::new(&display,
             &[
                 Vertex { position: [-0.5, -0.5], color: [0.0, 1.0, 0.0] },
                 Vertex { position: [ 0.0,  0.5], color: [0.0, 0.0, 1.0] },
@@ -66,7 +65,7 @@ fn main() {
             "
         },
 
-        110 => {  
+        110 => {
             vertex: "
                 #version 110
 
@@ -113,9 +112,8 @@ fn main() {
     target.finish().unwrap();
 
     // reading the front buffer into an image
-    let image: glium::texture::RawImage2d<u8> = display.read_front_buffer();
+    let image: glium::texture::RawImage2d<'_, u8> = display.read_front_buffer().unwrap();
     let image = image::ImageBuffer::from_raw(image.width, image.height, image.data.into_owned()).unwrap();
     let image = image::DynamicImage::ImageRgba8(image).flipv();
-    let mut output = std::fs::File::create(&Path::new("glium-example-screenshot.png")).unwrap();
-    image.save(&mut output, image::ImageFormat::PNG).unwrap();
+    image.save("glium-example-screenshot.png").unwrap();
 }

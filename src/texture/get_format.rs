@@ -1,14 +1,14 @@
-use context::CommandContext;
-use version::Version;
-use version::Api;
-use gl;
+use crate::context::CommandContext;
+use crate::version::Version;
+use crate::version::Api;
+use crate::gl;
 
-use std::{ mem, fmt };
+use std::fmt;
 use std::error::Error;
 
-use texture::any::TextureAny;
-use TextureExt;
-use GlObject;
+use crate::texture::any::TextureAny;
+use crate::TextureExt;
+use crate::GlObject;
 
 /// Error that can happen when retrieving the internal format of a texture.
 #[derive(Copy, Clone, Debug)]
@@ -18,24 +18,20 @@ pub enum GetFormatError {
 }
 
 impl fmt::Display for GetFormatError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.description())
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use self::GetFormatError::*;
+        let desc = match self {
+            NotSupported => "The backend doesn't support retrieving the internal format",
+        };
+        fmt.write_str(desc)
     }
 }
 
-impl Error for GetFormatError {
-    fn description(&self) -> &str {
-        use self::GetFormatError::*;
-        match *self {
-            NotSupported =>
-                "The backend doesn't support retrieving the internal format",
-        }
-    }
-}
+impl Error for GetFormatError {}
 
 /// Internal format of a texture.
 ///
-/// The actual format of a texture is not necessarly one of the predefined ones, so we have
+/// The actual format of a texture is not necessarily one of the predefined ones, so we have
 /// to use a very generic description.
 // TODO: change bits to be u16 for consistency with the rest of the library
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -145,23 +141,23 @@ impl InternalFormatType {
 /// Determines the format of a texture.
 ///
 /// A `TextureAny` is guaranteed to have the same format for each mipmap.
-pub fn get_format(ctxt: &mut CommandContext, texture: &TextureAny)
+pub fn get_format(ctxt: &mut CommandContext<'_>, texture: &TextureAny)
                   -> Result<InternalFormat, GetFormatError>
 {
     if ctxt.version >= &Version(Api::Gl, 3, 0) || ctxt.version >= &Version(Api::GlEs, 3, 0) {
         let (red_sz, red_ty, green_sz, green_ty, blue_sz, blue_ty,
              alpha_sz, alpha_ty, depth_sz, depth_ty) = unsafe
         {
-            let mut red_sz = mem::uninitialized();
-            let mut red_ty = mem::uninitialized();
-            let mut green_sz = mem::uninitialized();
-            let mut green_ty = mem::uninitialized();
-            let mut blue_sz = mem::uninitialized();
-            let mut blue_ty = mem::uninitialized();
-            let mut alpha_sz = mem::uninitialized();
-            let mut alpha_ty = mem::uninitialized();
-            let mut depth_sz = mem::uninitialized();
-            let mut depth_ty = mem::uninitialized();
+            let mut red_sz = 0;
+            let mut red_ty = 0;
+            let mut green_sz = 0;
+            let mut green_ty = 0;
+            let mut blue_sz = 0;
+            let mut blue_ty = 0;
+            let mut alpha_sz = 0;
+            let mut alpha_ty = 0;
+            let mut depth_sz = 0;
+            let mut depth_ty = 0;
 
             if ctxt.version >= &Version(Api::Gl, 4, 5) ||
                ctxt.extensions.gl_arb_direct_state_access

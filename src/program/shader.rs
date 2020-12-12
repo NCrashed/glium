@@ -1,19 +1,19 @@
-use gl;
-use version::Version;
-use version::Api;
+use crate::gl;
+use crate::version::Version;
+use crate::version::Api;
 
-use CapabilitiesSource;
-use backend::Facade;
-use context::Context;
-use ContextExt;
+use crate::CapabilitiesSource;
+use crate::backend::Facade;
+use crate::context::Context;
+use crate::ContextExt;
 
-use std::{ffi, mem, ptr};
+use std::{ffi, ptr};
 use std::rc::Rc;
 
-use GlObject;
-use Handle;
+use crate::GlObject;
+use crate::Handle;
 
-use program::ProgramCreationError;
+use crate::program::{ProgramCreationError, ShaderType};
 
 /// A single, compiled but unlinked, shader.
 pub struct Shader {
@@ -114,7 +114,7 @@ pub fn build_shader<F: ?Sized>(facade: &F, shader_type: gl::types::GLenum, sourc
 
         // checking compilation success by reading a flag on the shader
         let compilation_success = {
-            let mut compilation_success: gl::types::GLint = mem::uninitialized();
+            let mut compilation_success: gl::types::GLint = 0;
             match id {
                 Handle::Id(id) => {
                     assert!(ctxt.version >= &Version(Api::Gl, 2, 0) ||
@@ -133,12 +133,12 @@ pub fn build_shader<F: ?Sized>(facade: &F, shader_type: gl::types::GLenum, sourc
         if compilation_success == 1 {
             Ok(Shader {
                 context: facade.get_context().clone(),
-                id: id
+                id
             })
 
         } else {
             // compilation error
-            let mut error_log_size: gl::types::GLint = mem::uninitialized();
+            let mut error_log_size: gl::types::GLint = 0;
 
             match id {
                 Handle::Id(id) => {
@@ -172,10 +172,10 @@ pub fn build_shader<F: ?Sized>(facade: &F, shader_type: gl::types::GLenum, sourc
             error_log.set_len(error_log_size as usize);
 
             match String::from_utf8(error_log) {
-                Ok(msg) => Err(ProgramCreationError::CompilationError(msg)),
+                Ok(msg) => Err(ProgramCreationError::CompilationError(msg, ShaderType::from_opengl_type(shader_type))),
                 Err(_) => Err(
                     ProgramCreationError::CompilationError("Could not convert the log \
-                                                            message to UTF-8".to_owned())
+                                                            message to UTF-8".to_owned(), ShaderType::from_opengl_type(shader_type))
                 ),
             }
         }

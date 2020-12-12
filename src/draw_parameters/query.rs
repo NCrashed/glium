@@ -1,26 +1,25 @@
-use backend::Facade;
-use context::Context;
-use context::CommandContext;
-use ContextExt;
-use DrawError;
-use ToGlEnum;
-use GlObject;
-use QueryExt;
+use crate::backend::Facade;
+use crate::context::Context;
+use crate::context::CommandContext;
+use crate::ContextExt;
+use crate::DrawError;
+use crate::ToGlEnum;
+use crate::GlObject;
+use crate::QueryExt;
 
 use std::cell::Cell;
 use std::fmt;
-use std::mem;
 use std::rc::Rc;
 use std::error::Error;
 
-use buffer::Buffer;
-use buffer::BufferSlice;
-use BufferExt;
-use BufferSliceExt;
+use crate::buffer::Buffer;
+use crate::buffer::BufferSlice;
+use crate::BufferExt;
+use crate::BufferSliceExt;
 
-use gl;
-use version::Api;
-use version::Version;
+use crate::gl;
+use crate::version::Api;
+use crate::version::Version;
 
 pub struct RawQuery {
     context: Rc<Context>,
@@ -67,19 +66,16 @@ pub enum QueryCreationError {
 }
 
 impl fmt::Display for QueryCreationError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.description())
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use self::QueryCreationError::*;
+        let desc = match *self {
+            NotSupported => "The given query type is not supported",
+        };
+        fmt.write_str(desc)
     }
 }
 
-impl Error for QueryCreationError {
-    fn description(&self) -> &str {
-        use self::QueryCreationError::*;
-        match *self {
-            NotSupported => "The given query type is not supported",
-        }
-    }
-}
+impl Error for QueryCreationError {}
 
 /// Error that can happen when writing the value of a query to a buffer.
 #[derive(Copy, Clone, Debug)]
@@ -89,19 +85,16 @@ pub enum ToBufferError {
 }
 
 impl fmt::Display for ToBufferError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.description())
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use self::ToBufferError::*;
+        let desc = match *self {
+            NotSupported => "Writing the result to a buffer is not supported",
+        };
+        fmt.write_str(desc)
     }
 }
 
-impl Error for ToBufferError {
-    fn description(&self) -> &str {
-        use self::ToBufferError::*;
-        match *self {
-            NotSupported => "Writing the result to a buffer is not supported",
-        }
-    }
-}
+impl Error for ToBufferError {}
 
 impl RawQuery {
     /// Builds a new query. Returns `None` if the backend doesn't support this type.
@@ -114,7 +107,7 @@ impl RawQuery {
         // FIXME: handle Timestamp separately
 
         let id = unsafe {
-            let mut id = mem::uninitialized();
+            let mut id = 0;
 
             if ctxt.version >= &Version(Api::Gl, 3, 3) {
                 match ty {
@@ -192,9 +185,9 @@ impl RawQuery {
         };
 
         Ok(RawQuery {
-            context: context,
-            id: id,
-            ty: ty,
+            context,
+            id,
+            ty,
             has_been_used: Cell::new(false),
         })
     }
@@ -211,7 +204,7 @@ impl RawQuery {
         Buffer::<u8>::unbind_query(&mut ctxt);
 
         unsafe {
-            let mut value = mem::uninitialized();
+            let mut value = 0;
 
             if ctxt.version >= &Version(Api::Gl, 1, 5) ||
                ctxt.version >= &Version(Api::GlEs, 3, 0)
@@ -248,14 +241,14 @@ impl RawQuery {
         Buffer::<u8>::unbind_query(&mut ctxt);
 
         unsafe {
-            let mut value = mem::uninitialized();
+            let mut value = 0;
             self.raw_get_u32(&mut ctxt, &mut value);
             value
         }
     }
 
     /// Writes the value of the query to a buffer.
-    pub fn write_u32_to_buffer(&self, target: BufferSlice<u32>) -> Result<(), ToBufferError> {
+    pub fn write_u32_to_buffer(&self, target: BufferSlice<'_, u32>) -> Result<(), ToBufferError> {
         let mut ctxt = self.context.make_current();
 
         if !(ctxt.version >= &Version(Api::Gl, 4, 4) || ctxt.extensions.gl_arb_query_buffer_object ||
@@ -282,7 +275,7 @@ impl RawQuery {
         Ok(())
     }
 
-    unsafe fn raw_get_u32(&self, ctxt: &mut CommandContext, target: *mut gl::types::GLuint) {
+    unsafe fn raw_get_u32(&self, ctxt: &mut CommandContext<'_>, target: *mut gl::types::GLuint) {
         if ctxt.version >= &Version(Api::Gl, 1, 5) || ctxt.version >= &Version(Api::GlEs, 3, 0) {
             ctxt.gl.GetQueryObjectuiv(self.id, gl::QUERY_RESULT, target);
 
@@ -313,18 +306,18 @@ impl RawQuery {
         Buffer::<u8>::unbind_query(&mut ctxt);
 
         unsafe {
-            let mut value = mem::uninitialized();
-            if let Ok(_) = self.raw_get_u64(&mut ctxt, &mut value) {
+            let mut value = 0;
+            if self.raw_get_u64(&mut ctxt, &mut value).is_ok() {
                 return value;
             }
 
-            let mut value = mem::uninitialized();
+            let mut value = 0;
             self.raw_get_u32(&mut ctxt, &mut value);
             value as u64
         }
     }
 
-    unsafe fn raw_get_u64(&self, ctxt: &mut CommandContext, target: *mut gl::types::GLuint64)
+    unsafe fn raw_get_u64(&self, ctxt: &mut CommandContext<'_>, target: *mut gl::types::GLuint64)
                           -> Result<(), ()>
     {
         if ctxt.version >= &Version(Api::Gl, 3, 3) {
@@ -345,7 +338,7 @@ impl RawQuery {
     }
 
     /// If the query is active, unactivates it.
-    fn deactivate(&self, ctxt: &mut CommandContext) {
+    fn deactivate(&self, ctxt: &mut CommandContext<'_>) {
         if ctxt.state.samples_passed_query == self.id {
             unsafe { raw_end_query(ctxt, gl::SAMPLES_PASSED) };
             ctxt.state.samples_passed_query = 0;
@@ -409,7 +402,7 @@ impl Drop for RawQuery {
 }
 
 impl QueryExt for RawQuery {
-    fn begin_query(&self, ctxt: &mut CommandContext) -> Result<(), DrawError> {
+    fn begin_query(&self, ctxt: &mut CommandContext<'_>) -> Result<(), DrawError> {
         match self.ty {
             QueryType::SamplesPassed => {
                 if ctxt.state.any_samples_passed_query != 0 {
@@ -555,7 +548,7 @@ impl QueryExt for RawQuery {
         Ok(())
     }
 
-    fn end_samples_passed_query(ctxt: &mut CommandContext) {
+    fn end_samples_passed_query(ctxt: &mut CommandContext<'_>) {
         if ctxt.state.samples_passed_query != 0 {
             ctxt.state.samples_passed_query = 0;
             unsafe { raw_end_query(ctxt, gl::SAMPLES_PASSED); }
@@ -573,7 +566,7 @@ impl QueryExt for RawQuery {
     }
 
     #[inline]
-    fn end_time_elapsed_query(ctxt: &mut CommandContext) {
+    fn end_time_elapsed_query(ctxt: &mut CommandContext<'_>) {
         if ctxt.state.time_elapsed_query != 0 {
             ctxt.state.time_elapsed_query = 0;
             unsafe { raw_end_query(ctxt, gl::TIME_ELAPSED); }
@@ -581,7 +574,7 @@ impl QueryExt for RawQuery {
     }
 
     #[inline]
-    fn end_primitives_generated_query(ctxt: &mut CommandContext) {
+    fn end_primitives_generated_query(ctxt: &mut CommandContext<'_>) {
         if ctxt.state.primitives_generated_query != 0 {
             ctxt.state.primitives_generated_query = 0;
             unsafe { raw_end_query(ctxt, gl::PRIMITIVES_GENERATED); }
@@ -589,14 +582,14 @@ impl QueryExt for RawQuery {
     }
 
     #[inline]
-    fn end_transform_feedback_primitives_written_query(ctxt: &mut CommandContext) {
+    fn end_transform_feedback_primitives_written_query(ctxt: &mut CommandContext<'_>) {
         if ctxt.state.transform_feedback_primitives_written_query != 0 {
             ctxt.state.transform_feedback_primitives_written_query = 0;
             unsafe { raw_end_query(ctxt, gl::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN); }
         }
     }
 
-    fn begin_conditional_render(&self, ctxt: &mut CommandContext, wait: bool, per_region: bool) {
+    fn begin_conditional_render(&self, ctxt: &mut CommandContext<'_>, wait: bool, per_region: bool) {
         let new_mode = match (wait, per_region) {
             (true, true) => gl::QUERY_BY_REGION_WAIT,
             (true, false) => gl::QUERY_WAIT,
@@ -618,7 +611,7 @@ impl QueryExt for RawQuery {
             }
         }
 
-        // de-activating the existing conditionnal render first
+        // de-activating the existing conditional render first
         if ctxt.state.conditional_render.is_some() {
             RawQuery::end_conditional_render(ctxt);
         }
@@ -638,7 +631,7 @@ impl QueryExt for RawQuery {
         ctxt.state.conditional_render = Some((self.id, new_mode));
     }
 
-    fn end_conditional_render(ctxt: &mut CommandContext) {
+    fn end_conditional_render(ctxt: &mut CommandContext<'_>) {
         if ctxt.state.conditional_render.is_none() {
             return;
         }
@@ -661,7 +654,7 @@ impl QueryExt for RawQuery {
 
 impl fmt::Debug for RawQuery {
     #[inline]
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(fmt, "Query object #{}", self.id)
     }
 }
@@ -682,7 +675,7 @@ impl GlObject for RawQuery {
 /// The type of query must be guaranteed to be supported by the backend.
 /// The id of the query must be valid.
 ///
-unsafe fn raw_begin_query(ctxt: &mut CommandContext, ty: gl::types::GLenum, id: gl::types::GLuint) {
+unsafe fn raw_begin_query(ctxt: &mut CommandContext<'_>, ty: gl::types::GLenum, id: gl::types::GLuint) {
     if ctxt.version >= &Version(Api::Gl, 1, 5) ||
        ctxt.version >= &Version(Api::GlEs, 3, 0)
     {
@@ -704,7 +697,7 @@ unsafe fn raw_begin_query(ctxt: &mut CommandContext, ty: gl::types::GLenum, id: 
 /// # Unsafe
 ///
 /// The type of query must be guaranteed to be supported by the backend.
-unsafe fn raw_end_query(ctxt: &mut CommandContext, ty: gl::types::GLenum) {
+unsafe fn raw_end_query(ctxt: &mut CommandContext<'_>, ty: gl::types::GLenum) {
     if ctxt.version >= &Version(Api::Gl, 1, 5) ||
        ctxt.version >= &Version(Api::GlEs, 3, 0)
     {
@@ -749,9 +742,9 @@ macro_rules! impl_helper {
             /// This function doesn't block. Instead it submits a commands to the GPU's commands
             /// queue and orders the GPU to write the result of the query to a buffer.
             ///
-            /// This operation is not necessarly supported everywhere.
+            /// This operation is not necessarily supported everywhere.
             #[inline]
-            pub fn to_buffer_u32(&self, target: BufferSlice<u32>)
+            pub fn to_buffer_u32(&self, target: BufferSlice<'_, u32>)
                                  -> Result<(), ToBufferError>
             {
                 self.query.write_u32_to_buffer(target)
@@ -769,37 +762,37 @@ macro_rules! impl_helper {
 
         impl QueryExt for $name {
             #[inline]
-            fn begin_query(&self, ctxt: &mut CommandContext) -> Result<(), DrawError> {
+            fn begin_query(&self, ctxt: &mut CommandContext<'_>) -> Result<(), DrawError> {
                 self.query.begin_query(ctxt)
             }
 
             #[inline]
-            fn end_samples_passed_query(ctxt: &mut CommandContext) {
+            fn end_samples_passed_query(ctxt: &mut CommandContext<'_>) {
                 RawQuery::end_samples_passed_query(ctxt)
             }
 
             #[inline]
-            fn end_time_elapsed_query(ctxt: &mut CommandContext) {
+            fn end_time_elapsed_query(ctxt: &mut CommandContext<'_>) {
                 RawQuery::end_time_elapsed_query(ctxt)
             }
 
             #[inline]
-            fn end_primitives_generated_query(ctxt: &mut CommandContext) {
+            fn end_primitives_generated_query(ctxt: &mut CommandContext<'_>) {
                 RawQuery::end_primitives_generated_query(ctxt)
             }
 
             #[inline]
-            fn end_transform_feedback_primitives_written_query(ctxt: &mut CommandContext) {
+            fn end_transform_feedback_primitives_written_query(ctxt: &mut CommandContext<'_>) {
                 RawQuery::end_transform_feedback_primitives_written_query(ctxt)
             }
 
             #[inline]
-            fn begin_conditional_render(&self, ctxt: &mut CommandContext, wait: bool, per_region: bool) {
+            fn begin_conditional_render(&self, ctxt: &mut CommandContext<'_>, wait: bool, per_region: bool) {
                 self.query.begin_conditional_render(ctxt, wait, per_region)
             }
 
             #[inline]
-            fn end_conditional_render(ctxt: &mut CommandContext) {
+            fn end_conditional_render(ctxt: &mut CommandContext<'_>) {
                 RawQuery::end_conditional_render(ctxt)
             }
 
@@ -882,11 +875,11 @@ impl AnySamplesPassedQuery {
         }
 
         if let Ok(q) = RawQuery::new(facade, QueryType::AnySamplesPassed) {
-            return Ok(AnySamplesPassedQuery { query: q });
+            Ok(AnySamplesPassedQuery { query: q })
         } else if let Ok(q) = RawQuery::new(facade, QueryType::SamplesPassed) {
-            return Ok(AnySamplesPassedQuery { query: q });
+            Ok(AnySamplesPassedQuery { query: q })
         } else {
-            return Err(QueryCreationError::NotSupported);
+            Err(QueryCreationError::NotSupported)
         }
     }
 }

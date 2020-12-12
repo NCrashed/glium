@@ -3,19 +3,16 @@ A uniform is a global variable in your program. In order to draw something, you 
 give `glium` the values of all your uniforms. Objects that implement the `Uniform` trait are
 here to do that.
 
-There are two primarly ways to do this. The first one is to create your own structure and put
+There are two primary ways to do this. The first one is to create your own structure and put
 the `#[uniforms]` attribute on it. See the `glium_macros` crate for more infos.
 
 The second way is to use the `uniform!` macro provided by glium:
 
 ```no_run
-#[macro_use]
-extern crate glium;
-
-# fn main() {
-# let display: glium::Display = unsafe { std::mem::uninitialized() };
-# let tex: f32 = unsafe { std::mem::uninitialized() };
-# let matrix: f32 = unsafe { std::mem::uninitialized() };
+# use glium::uniform;
+# fn example(display: glium::Display) {
+# let tex: f32 = 0.0;
+# let matrix: f32 = 0.0;
 let uniforms = uniform! {
     texture: tex,
     matrix: matrix
@@ -30,12 +27,8 @@ In both situations, each field must implement the `UniformValue` trait.
 In order to customize the way a texture is being sampled, you must use a `Sampler`.
 
 ```no_run
-#[macro_use]
-extern crate glium;
-
-# fn main() {
-# let display: glium::Display = unsafe { std::mem::uninitialized() };
-# let texture: glium::texture::Texture2d = unsafe { std::mem::uninitialized() };
+# use glium::uniform;
+# fn example(display: glium::Display, texture: glium::texture::Texture2d) {
 let uniforms = uniform! {
     texture: glium::uniforms::Sampler::new(&texture)
                         .magnify_filter(glium::uniforms::MagnifySamplerFilter::Nearest)
@@ -50,12 +43,8 @@ upload the content of this block in the video memory thanks to a `UniformBuffer`
 can link the buffer to the name of the block, just like any other uniform.
 
 ```no_run
-#[macro_use]
-extern crate glium;
-# fn main() {
-# let display: glium::Display = unsafe { std::mem::uninitialized() };
-# let texture: glium::texture::Texture2d = unsafe { std::mem::uninitialized() };
-
+# use glium::uniform;
+# fn example(display: glium::Display, texture: glium::texture::Texture2d) {
 let program = glium::Program::from_source(&display,
     "
         #version 110
@@ -96,12 +85,8 @@ than using multiple programs that are switched during execution.
 A subroutine uniform is unique per shader stage, and not per program.
 
 ```no_run
-#[macro_use]
-extern crate glium;
-# fn main() {
-# let display: glium::Display = unsafe { std::mem::uninitialized() };
-# let texture: glium::texture::Texture2d = unsafe { std::mem::uninitialized() };
-
+# use glium::uniform;
+# fn example(display: glium::Display, texture: glium::texture::Texture2d) {
 let program = glium::Program::from_source(&display,
     "
         #version 150
@@ -141,7 +126,7 @@ let program = glium::Program::from_source(&display,
 ```
 */
 pub use self::buffer::UniformBuffer;
-pub use self::sampler::{SamplerWrapFunction, MagnifySamplerFilter, MinifySamplerFilter};
+pub use self::sampler::{SamplerWrapFunction, MagnifySamplerFilter, MinifySamplerFilter, DepthTextureComparison};
 pub use self::sampler::{Sampler, SamplerBehavior};
 pub use self::uniforms::{EmptyUniforms, UniformsStorage};
 pub use self::value::{UniformValue, UniformType};
@@ -149,10 +134,10 @@ pub use self::value::{UniformValue, UniformType};
 use std::error::Error;
 use std::fmt;
 
-use buffer::Content as BufferContent;
-use buffer::Buffer;
-use program;
-use program::BlockLayout;
+use crate::buffer::Content as BufferContent;
+use crate::buffer::Buffer;
+use crate::program;
+use crate::program::BlockLayout;
 
 mod bind;
 mod buffer;
@@ -165,7 +150,7 @@ mod value;
 /// Objects of this type can be passed to the `draw()` function.
 pub trait Uniforms {
     /// Calls the parameter once with the name and value of each uniform.
-    fn visit_values<'a, F: FnMut(&str, UniformValue<'a>)>(&'a self, F);
+    fn visit_values<'a, F: FnMut(&str, UniformValue<'a>)>(&'a self, _: F);
 }
 
 /// Error about a block layout mismatch.
@@ -213,9 +198,19 @@ pub enum LayoutMismatchError {
 }
 
 impl Error for LayoutMismatchError {
-    fn description(&self) -> &str {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         use self::LayoutMismatchError::*;
         match *self {
+            MemberMismatch{ ref err, .. } => Some(err.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for LayoutMismatchError {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        use self::LayoutMismatchError::*;
+        let desc = match *self {
             TypeMismatch { .. } =>
                 "There is a mismatch in the type of one element",
             LayoutMismatch { .. } =>
@@ -226,28 +221,14 @@ impl Error for LayoutMismatchError {
                 "There is a mismatch in a submember of this layout",
             MissingField { .. } =>
                 "A field is missing in either the expected of the input data layout",
-        }
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        use self::LayoutMismatchError::*;
-        match *self {
-            MemberMismatch{ ref err, .. } => Some(err.as_ref()),
-            _ => None,
-        }
-    }
-}
-
-impl fmt::Display for LayoutMismatchError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        use self::LayoutMismatchError::*;
+        };
         match *self {
             //duplicate Patternmatching, different Types can't be condensed
             TypeMismatch { ref expected, ref obtained } =>
                 write!(
                     fmt,
                     "{}, got: {:?}, expected: {:?}",
-                    self.description(),
+                    desc,
                     obtained,
                     expected,
                 ),
@@ -255,7 +236,7 @@ impl fmt::Display for LayoutMismatchError {
                 write!(
                     fmt,
                     "{}, got: {:?}, expected: {:?}",
-                    self.description(),
+                    desc,
                     obtained,
                     expected,
                 ),
@@ -263,7 +244,7 @@ impl fmt::Display for LayoutMismatchError {
                 write!(
                     fmt,
                     "{}, got: {}, expected: {}",
-                    self.description(),
+                    desc,
                     obtained,
                     expected,
                 ),
@@ -271,7 +252,7 @@ impl fmt::Display for LayoutMismatchError {
                 write!(
                     fmt,
                     "{}, {}: {}",
-                    self.description(),
+                    desc,
                     member,
                     err,
                 ),
@@ -279,7 +260,7 @@ impl fmt::Display for LayoutMismatchError {
                 write!(
                     fmt,
                     "{}: {}",
-                    self.description(),
+                    desc,
                     name,
                 ),
         }
@@ -291,13 +272,13 @@ impl fmt::Display for LayoutMismatchError {
 /// This includes buffers and textures for example.
 pub trait AsUniformValue {
     /// Builds a `UniformValue`.
-    fn as_uniform_value(&self) -> UniformValue;
+    fn as_uniform_value(&self) -> UniformValue<'_>;
 }
 
 // TODO: no way to bind a slice
 impl<'a, T: ?Sized> AsUniformValue for &'a Buffer<T> where T: UniformBlock + BufferContent {
     #[inline]
-    fn as_uniform_value(&self) -> UniformValue {
+    fn as_uniform_value(&self) -> UniformValue<'_> {
         #[inline]
         fn f<T: ?Sized>(block: &program::UniformBlock)
                         -> Result<(), LayoutMismatchError> where T: UniformBlock + BufferContent
@@ -314,7 +295,7 @@ impl<'a, T: ?Sized> AsUniformValue for &'a Buffer<T> where T: UniformBlock + Buf
 pub trait UniformBlock {        // TODO: `: Copy`, but unsized structs don't impl `Copy`
     /// Checks whether the uniforms' layout matches the given block if `Self` starts at
     /// the given offset.
-    fn matches(&BlockLayout, base_offset: usize) -> Result<(), LayoutMismatchError>;
+    fn matches(_: &BlockLayout, base_offset: usize) -> Result<(), LayoutMismatchError>;
 
     /// Builds the `BlockLayout` corresponding to the current object.
     fn build_layout(base_offset: usize) -> BlockLayout;
@@ -446,3 +427,4 @@ impl_uniform_block_array!(256);
 impl_uniform_block_array!(512);
 impl_uniform_block_array!(1024);
 impl_uniform_block_array!(2048);
+impl_uniform_block_array!(4096);

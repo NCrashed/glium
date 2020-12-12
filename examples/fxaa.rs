@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate glium;
 
+#[allow(unused_imports)]
 use glium::{glutin, Surface};
 
 mod support;
@@ -79,8 +80,8 @@ mod fxaa {
                             #define FXAA_SPAN_MAX     8.0
 
                             vec4 fxaa(sampler2D tex, vec2 fragCoord, vec2 resolution,
-                                        vec2 v_rgbNW, vec2 v_rgbNE, 
-                                        vec2 v_rgbSW, vec2 v_rgbSE, 
+                                        vec2 v_rgbNW, vec2 v_rgbNE,
+                                        vec2 v_rgbSW, vec2 v_rgbSE,
                                         vec2 v_rgbM) {
                                 vec4 color;
                                 mediump vec2 inverseVP = vec2(1.0 / resolution.x, 1.0 / resolution.y);
@@ -98,19 +99,19 @@ mod fxaa {
                                 float lumaM  = dot(rgbM,  luma);
                                 float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
                                 float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
-                                
+
                                 mediump vec2 dir;
                                 dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
                                 dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));
-                                
+
                                 float dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) *
                                                       (0.25 * FXAA_REDUCE_MUL), FXAA_REDUCE_MIN);
-                                
+
                                 float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
                                 dir = min(vec2(FXAA_SPAN_MAX, FXAA_SPAN_MAX),
                                           max(vec2(-FXAA_SPAN_MAX, -FXAA_SPAN_MAX),
                                           dir * rcpDirMin)) * inverseVP;
-                                
+
                                 vec3 rgbA = 0.5 * (
                                     texture2D(tex, fragCoord * inverseVP + dir * (1.0 / 3.0 - 0.5)).xyz +
                                     texture2D(tex, fragCoord * inverseVP + dir * (2.0 / 3.0 - 0.5)).xyz);
@@ -127,7 +128,7 @@ mod fxaa {
                             }
 
                             void main() {
-                                vec2 fragCoord = v_tex_coords * resolution; 
+                                vec2 fragCoord = v_tex_coords * resolution;
                                 vec4 color;
                                 if (enabled != 0) {
                                     vec2 inverseVP = 1.0 / resolution.xy;
@@ -154,7 +155,7 @@ mod fxaa {
     }
 
     pub fn draw<T, F, R>(system: &FxaaSystem, target: &mut T, enabled: bool, mut draw: F)
-                         -> R where T: Surface, F: FnMut(&mut SimpleFrameBuffer) -> R
+                         -> R where T: Surface, F: FnMut(&mut SimpleFrameBuffer<'_>) -> R
     {
         let target_dimensions = target.get_dimensions();
 
@@ -205,7 +206,7 @@ mod fxaa {
             enabled: if enabled { 1i32 } else { 0i32 },
             resolution: (target_dimensions.0 as f32, target_dimensions.1 as f32)
         };
-        
+
         target.draw(&system.vertex_buffer, &system.index_buffer, &system.program, &uniforms,
                     &Default::default()).unwrap();
 
@@ -220,12 +221,12 @@ fn main() {
               You can use the space bar to switch fxaa on and off.");
 
     // building the display, ie. the main object
-    let mut events_loop = glutin::EventsLoop::new();
-    let window = glutin::WindowBuilder::new();
-    let context = glutin::ContextBuilder::new()
+    let event_loop = glutin::event_loop::EventLoop::new();
+    let wb = glutin::window::WindowBuilder::new();
+    let cb = glutin::ContextBuilder::new()
         .with_depth_buffer(24)
         .with_vsync(true);
-    let display = glium::Display::new(window, context, &events_loop).unwrap();
+    let display = glium::Display::new(wb, cb, &event_loop).unwrap();
 
     // building the vertex and index buffers
     let vertex_buffer = support::load_wavefront(&display, include_bytes!("support/teapot.obj"));
@@ -340,9 +341,9 @@ fn main() {
     let mut camera = support::camera::CameraState::new();
     let fxaa = fxaa::FxaaSystem::new(&display);
     let mut fxaa_enabled = true;
-    
+
     // the main loop
-    support::start_loop(|| {
+    support::start_loop(event_loop, move |events| {
         camera.update();
 
         // building the uniforms
@@ -374,27 +375,29 @@ fn main() {
         let mut action = support::Action::Continue;
 
         // polling and handling the events received by the window
-        events_loop.poll_events(|event| match event {
-            glutin::Event::WindowEvent { event, .. } => {
-                camera.process_input(&event);
-                match event {
-                    glutin::WindowEvent::Closed => action = support::Action::Stop,
-                    glutin::WindowEvent::KeyboardInput { input, .. } => match input.state {
-                        glutin::ElementState::Pressed => match input.virtual_keycode {
-                            Some(glutin::VirtualKeyCode::Escape) => action = support::Action::Stop,
-                            Some(glutin::VirtualKeyCode::Space) => {
-                                fxaa_enabled = !fxaa_enabled;
-                                println!("FXAA is now {}", if fxaa_enabled { "enabled" } else { "disabled" });
+        for event in events {
+            match event {
+                glutin::event::Event::WindowEvent { event, .. } => {
+                    camera.process_input(&event);
+                    match event {
+                        glutin::event::WindowEvent::CloseRequested => action = support::Action::Stop,
+                        glutin::event::WindowEvent::KeyboardInput { input, .. } => match input.state {
+                            glutin::event::ElementState::Pressed => match input.virtual_keycode {
+                                Some(glutin::event::VirtualKeyCode::Escape) => action = support::Action::Stop,
+                                Some(glutin::event::VirtualKeyCode::Space) => {
+                                    fxaa_enabled = !fxaa_enabled;
+                                    println!("FXAA is now {}", if fxaa_enabled { "enabled" } else { "disabled" });
+                                },
+                                _ => (),
                             },
                             _ => (),
                         },
                         _ => (),
-                    },
-                    _ => (),
-                }
-            },
-            _ => (),
-        });
+                    }
+                },
+                _ => (),
+            }
+        };
 
         action
     });

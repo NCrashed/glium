@@ -1,7 +1,6 @@
 //! Contains everything related to the interface between glium and the OpenGL implementation.
 
-use gl;
-use backtrace;
+use crate::gl;
 
 use std::collections::HashMap;
 use std::mem;
@@ -17,22 +16,22 @@ use std::hash::BuildHasherDefault;
 
 use fnv::FnvHasher;
 
-use IncompatibleOpenGl;
-use SwapBuffersError;
-use CapabilitiesSource;
-use ContextExt;
-use backend::Backend;
-use version;
-use version::Api;
-use version::Version;
+use crate::IncompatibleOpenGl;
+use crate::SwapBuffersError;
+use crate::CapabilitiesSource;
+use crate::ContextExt;
+use crate::backend::Backend;
+use crate::version;
+use crate::version::Api;
+use crate::version::Version;
 
-use debug;
-use fbo;
-use ops;
-use sampler_object;
-use texture;
-use uniforms;
-use vertex_array_object;
+use crate::debug;
+use crate::fbo;
+use crate::ops;
+use crate::sampler_object;
+use crate::texture;
+use crate::uniforms;
+use crate::vertex_array_object;
 
 pub use self::capabilities::{ReleaseBehavior, Capabilities, Profile};
 pub use self::extensions::ExtensionsList;
@@ -64,7 +63,7 @@ pub struct Context {
 
     /// Glue between glium and the code that handles windowing. Contains functions that allows
     /// you to swap buffers, retrieve the size of the framebuffer, etc.
-    backend: RefCell<Box<Backend>>,
+    backend: RefCell<Box<dyn Backend>>,
 
     /// Whether or not glium must check that the OpenGL context is the current one before each
     /// call.
@@ -83,7 +82,7 @@ pub struct Context {
     /// is a normal situation.
     framebuffer_objects: Option<fbo::FramebuffersContainer>,
 
-    /// We maintain a list of vertex array objecs.
+    /// We maintain a list of vertex array objects.
     vertex_array_objects: vertex_array_object::VertexAttributesSystem,
 
     /// We maintain a list of samplers for each possible behavior.
@@ -168,7 +167,7 @@ impl Context {
 
         let version = version::get_gl_version(&gl);
         let extensions = extensions::get_extensions(&gl, &version);
-        try!(check_gl_compatibility(&version, &extensions));
+        check_gl_compatibility(&version, &extensions)?;
 
         let capabilities = capabilities::get_capabilities(&gl, &version, &extensions);
         let report_debug_output_errors = Cell::new(true);
@@ -197,20 +196,20 @@ impl Context {
         };
 
         let context = Rc::new(Context {
-            gl: gl,
+            gl,
             state: gl_state,
-            version: version,
-            extensions: extensions,
-            capabilities: capabilities,
-            debug_callback: debug_callback,
-            report_debug_output_errors: report_debug_output_errors,
+            version,
+            extensions,
+            capabilities,
+            debug_callback,
+            report_debug_output_errors,
             backend: RefCell::new(Box::new(backend)),
-            check_current_context: check_current_context,
+            check_current_context,
             framebuffer_objects: Some(framebuffer_objects),
-            vertex_array_objects: vertex_array_objects,
-            samplers: samplers,
-            resident_texture_handles: resident_texture_handles,
-            resident_image_handles: resident_image_handles,
+            vertex_array_objects,
+            samplers,
+            resident_texture_handles,
+            resident_image_handles,
         });
 
         if context.debug_callback.is_some() {
@@ -220,13 +219,16 @@ impl Context {
         // making sure that an error wasn't triggered during initialization
         {
             let mut ctxt = context.make_current();
-            if ::get_gl_error(&mut ctxt).is_some() {
+            if crate::get_gl_error(&mut ctxt).is_some() {
                 println!("glium has triggered an OpenGL error during initialization. Please report \
                           this error: https://github.com/tomaka/glium/issues");
             }
             /*assert!(::get_gl_error(&mut ctxt).is_none(),
                     "glium has triggered an OpenGL error during initialization. Please report \
                      this error: https://github.com/tomaka/glium/issues");*/
+            if ctxt.version >= &Version(Api::Gl, 3, 2) && ctxt.extensions.gl_arb_seamless_cube_map {
+                ctxt.gl.Enable(gl::TEXTURE_CUBE_MAP_SEAMLESS);
+            }
         }
 
         Ok(context)
@@ -306,10 +308,8 @@ impl Context {
         }
 
         let backend = self.backend.borrow();
-        if self.check_current_context {
-            if !backend.is_current() {
-                unsafe { backend.make_current() };
-            }
+        if self.check_current_context && !backend.is_current() {
+            unsafe { backend.make_current() };
         }
 
         // swapping
@@ -320,8 +320,9 @@ impl Context {
         err
     }
 
-    /// DEPRECATED. Use `get_opengl_version` instead.
+    /// Returns the OpenGL version
     #[inline]
+    #[deprecated(note = "use `get_opengl_version` instead.")]
     pub fn get_version(&self) -> &Version {
         &self.version
     }
@@ -335,13 +336,13 @@ impl Context {
     /// Returns the GLSL version guaranteed to be supported.
     #[inline]
     pub fn get_supported_glsl_version(&self) -> Version {
-        version::get_supported_glsl_version(self.get_version())
+        version::get_supported_glsl_version(self.get_opengl_version())
     }
 
     /// Returns true if the given GLSL version is supported.
     #[inline]
     pub fn is_glsl_version_supported(&self, version: &Version) -> bool {
-        self.capabilities().supported_glsl_versions.iter().find(|&v| v == version).is_some()
+        self.capabilities().supported_glsl_versions.iter().any(|v| v == version)
     }
 
     /// Returns a string containing this GL version or release number used by this context.
@@ -409,7 +410,7 @@ impl Context {
     /// # Implementation
     ///
     /// If it has been determined that the context has been lost before, then the function
-    /// immediatly returns true. Otherwise, calls `glGetGraphicsResetStatus`. If this function
+    /// immediately returns true. Otherwise, calls `glGetGraphicsResetStatus`. If this function
     /// is not available, returns false.
     pub fn is_context_lost(&self) -> bool {
         if self.state.borrow().lost_context {
@@ -437,7 +438,7 @@ impl Context {
 
     /// Returns the behavior when the current OpenGL context is changed.
     ///
-    /// The most common value is `Flush`. In order to get `None` you must explicitely request it
+    /// The most common value is `Flush`. In order to get `None` you must explicitly request it
     /// during creation.
     #[inline]
     pub fn get_release_behavior(&self) -> ReleaseBehavior {
@@ -467,12 +468,9 @@ impl Context {
         unsafe {
             let ctxt = self.make_current();
 
-            if ctxt.version >= &Version(Api::GlEs, 2, 0) ||
-                ctxt.version >= &Version(Api::Gl, 4, 1)
-            {
-                if !ctxt.capabilities.supported_glsl_versions.is_empty() {
-                    ctxt.gl.ReleaseShaderCompiler();
-                }
+            if (ctxt.version >= &Version(Api::GlEs, 2, 0) ||
+                ctxt.version >= &Version(Api::Gl, 4, 1)) && !ctxt.capabilities.supported_glsl_versions.is_empty() {
+                ctxt.gl.ReleaseShaderCompiler();
             }
         }
     }
@@ -484,7 +482,7 @@ impl Context {
         unsafe {
             let ctxt = self.make_current();
 
-            let mut value: [gl::types::GLint; 4] = mem::uninitialized();
+            let mut value: [gl::types::GLint; 4] = [0; 4];
 
             if ctxt.extensions.gl_nvx_gpu_memory_info {
                 ctxt.gl.GetIntegerv(gl::GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX,
@@ -496,7 +494,7 @@ impl Context {
                 Some(value[0] as usize * 1024)
 
             } else {
-                return None;
+                None
             }
         }
     }
@@ -510,24 +508,21 @@ impl Context {
     /// ## Example
     ///
     /// ```no_run
-    /// # extern crate glium;
-    /// # extern crate glutin;
-    /// # fn main() {
-    /// # let display: glium::Display = unsafe { ::std::mem::uninitialized() };
-    /// let pixels: Vec<Vec<(u8, u8, u8, u8)>> = display.read_front_buffer();
+    /// # fn example(display: glium::Display) {
+    /// let pixels: Result<Vec<Vec<(u8, u8, u8, u8)>>, _> = display.read_front_buffer();
     /// # }
     /// ```
-    pub fn read_front_buffer<T>(&self) -> T
-                                where T: texture::Texture2dDataSink<(u8, u8, u8, u8)>
+    pub fn read_front_buffer<T>(&self) -> Result<T, ops::ReadError>
+        where T: texture::Texture2dDataSink<(u8, u8, u8, u8)>
     {
         let mut ctxt = self.make_current();
         let dimensions = self.get_framebuffer_dimensions();
-        let rect = ::Rect { left: 0, bottom: 0, width: dimensions.0, height: dimensions.1 };
+        let rect = crate::Rect { left: 0, bottom: 0, width: dimensions.0, height: dimensions.1 };
 
         let mut data = Vec::with_capacity(0);
         ops::read(&mut ctxt, ops::Source::DefaultFramebuffer(gl::FRONT_LEFT), &rect,
-                          &mut data, false);
-        T::from_raw(Cow::Owned(data), dimensions.0, dimensions.1)
+                          &mut data, false)?;
+        Ok(T::from_raw(Cow::Owned(data), dimensions.0, dimensions.1))
     }
 
     /// Execute an arbitrary closure with the OpenGL context active. Useful if another
@@ -550,7 +545,7 @@ impl Context {
     pub fn assert_no_error(&self, user_msg: Option<&str>) {
         let mut ctxt = self.make_current();
 
-        match (::get_gl_error(&mut ctxt), user_msg) {
+        match (crate::get_gl_error(&mut ctxt), user_msg) {
             (Some(msg), None) => panic!("{}", msg),
             (Some(msg), Some(user_msg)) => panic!("{} : {}", user_msg, msg),
             (None, _) => ()
@@ -597,7 +592,7 @@ impl Context {
     ///
     /// This is helpful to understand where you are when you have big applications.
     ///
-    /// Returns `Err` if the backend doesn't support this functionnality. You can choose whether
+    /// Returns `Err` if the backend doesn't support this functionality. You can choose whether
     /// to call `.unwrap()` if you want to make sure that it works, or `.ok()` if you don't care.
     pub fn insert_debug_marker(&self, marker: &str) -> Result<(), ()> {
         let ctxt = self.make_current();
@@ -637,7 +632,7 @@ impl ContextExt for Context {
         self.report_debug_output_errors.set(value);
     }
 
-    fn make_current(&self) -> CommandContext {
+    fn make_current(&self) -> CommandContext<'_> {
         if self.check_current_context {
             let backend = self.backend.borrow();
             if !backend.is_current() {
@@ -724,7 +719,7 @@ impl Drop for Context {
                 if ctxt.version >= &Version(Api::Gl, 4,5) || ctxt.extensions.gl_khr_debug {
                     ctxt.gl.Disable(gl::DEBUG_OUTPUT);
                 } else if ctxt.extensions.gl_arb_debug_output {
-                    ctxt.gl.DebugMessageCallbackARB(mem::transmute(0usize),
+                    ctxt.gl.DebugMessageCallbackARB(None,
                                                     ptr::null());
                 }
 
@@ -951,19 +946,17 @@ fn init_debug_callback(context: &Rc<Context>, synchronous: bool) {
         if ctxt.version >= &Version(Api::Gl, 4,5) || ctxt.version >= &Version(Api::GlEs, 3, 2) ||
            ctxt.extensions.gl_khr_debug || ctxt.extensions.gl_arb_debug_output
         {
-            if synchronous {
-                if ctxt.state.enabled_debug_output_synchronous != true {
-                    ctxt.gl.Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
-                    ctxt.state.enabled_debug_output_synchronous = true;
-                }
+            if synchronous && !ctxt.state.enabled_debug_output_synchronous {
+                ctxt.gl.Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
+                ctxt.state.enabled_debug_output_synchronous = true;
             }
 
             if ctxt.version >= &Version(Api::Gl, 4, 5) ||
                ctxt.version >= &Version(Api::GlEs, 3, 2) ||
                (ctxt.version >= &Version(Api::Gl, 1, 0) && ctxt.extensions.gl_khr_debug)
             {
-                ctxt.gl.DebugMessageCallback(callback_wrapper, context_raw_ptr.0
-                                                                 as *const _);
+                ctxt.gl.DebugMessageCallback(Some(callback_wrapper), context_raw_ptr.0
+                                                                     as *const _);
                 ctxt.gl.DebugMessageControl(gl::DONT_CARE, gl::DONT_CARE, gl::DONT_CARE, 0,
                                             ptr::null(), gl::TRUE);
 
@@ -975,8 +968,8 @@ fn init_debug_callback(context: &Rc<Context>, synchronous: bool) {
             } else if ctxt.version >= &Version(Api::GlEs, 2, 0) &&
                       ctxt.extensions.gl_khr_debug
             {
-                ctxt.gl.DebugMessageCallbackKHR(callback_wrapper, context_raw_ptr.0
-                                                                 as *const _);
+                ctxt.gl.DebugMessageCallbackKHR(Some(callback_wrapper), context_raw_ptr.0
+                                                                        as *const _);
                 ctxt.gl.DebugMessageControlKHR(gl::DONT_CARE, gl::DONT_CARE, gl::DONT_CARE, 0,
                                                ptr::null(), gl::TRUE);
 
@@ -986,8 +979,8 @@ fn init_debug_callback(context: &Rc<Context>, synchronous: bool) {
                 }
 
             } else {
-                ctxt.gl.DebugMessageCallbackARB(callback_wrapper, context_raw_ptr.0
-                                                                    as *const _);
+                ctxt.gl.DebugMessageCallbackARB(Some(callback_wrapper), context_raw_ptr.0
+                                                                        as *const _);
                 ctxt.gl.DebugMessageControlARB(gl::DONT_CARE, gl::DONT_CARE, gl::DONT_CARE,
                                                0, ptr::null(), gl::TRUE);
 

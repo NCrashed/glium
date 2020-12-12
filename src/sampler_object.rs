@@ -1,13 +1,13 @@
-use DrawError;
+use crate::DrawError;
 
-use uniforms::SamplerBehavior;
+use crate::uniforms::SamplerBehavior;
 
-use gl;
-use context::CommandContext;
-use version::Version;
-use version::Api;
-use GlObject;
-use ToGlEnum;
+use crate::gl;
+use crate::context::CommandContext;
+use crate::version::Version;
+use crate::version::Api;
+use crate::GlObject;
+use crate::ToGlEnum;
 
 /// An OpenGL sampler object.
 pub struct SamplerObject {
@@ -17,15 +17,14 @@ pub struct SamplerObject {
 
 impl SamplerObject {
     /// Builds a new sampler object.
-    pub fn new(ctxt: &mut CommandContext, behavior: &SamplerBehavior) -> SamplerObject {
+    pub fn new(ctxt: &mut CommandContext<'_>, behavior: &SamplerBehavior) -> SamplerObject {
         // making sure that the backend supports samplers
         assert!(ctxt.version >= &Version(Api::Gl, 3, 2) ||
                 ctxt.version >= &Version(Api::GlEs, 3, 0) ||
                 ctxt.extensions.gl_arb_sampler_objects);
 
         let sampler = unsafe {
-            use std::mem;
-            let mut sampler: gl::types::GLuint = mem::uninitialized();
+            let mut sampler: gl::types::GLuint = 0;
             ctxt.gl.GenSamplers(1, &mut sampler);
             sampler
         };
@@ -41,6 +40,13 @@ impl SamplerObject {
                                       behavior.minify_filter.to_glenum() as gl::types::GLint);
             ctxt.gl.SamplerParameteri(sampler, gl::TEXTURE_MAG_FILTER,
                                       behavior.magnify_filter.to_glenum() as gl::types::GLint);
+
+            if let Some(dtc) = behavior.depth_texture_comparison {
+                ctxt.gl.SamplerParameteri(sampler, gl::TEXTURE_COMPARE_MODE,
+                                          gl::COMPARE_R_TO_TEXTURE as gl::types::GLint);
+                ctxt.gl.SamplerParameteri(sampler, gl::TEXTURE_COMPARE_FUNC,
+                                          dtc.to_glenum() as gl::types::GLint);
+            }
 
             if let Some(max_value) = ctxt.capabilities.max_texture_max_anisotropy {
                 let value = if behavior.max_anisotropy as f32 > max_value {
@@ -61,7 +67,7 @@ impl SamplerObject {
 
     ///
     #[inline]
-    pub fn destroy(mut self, ctxt: &mut CommandContext) {
+    pub fn destroy(mut self, ctxt: &mut CommandContext<'_>) {
         self.destroyed = true;
 
         unsafe {
@@ -88,7 +94,7 @@ impl Drop for SamplerObject {
 
 /// Returns the sampler corresponding to the given behavior, or a draw error if
 /// samplers are not supported.
-pub fn get_sampler(ctxt: &mut CommandContext, behavior: &SamplerBehavior)
+pub fn get_sampler(ctxt: &mut CommandContext<'_>, behavior: &SamplerBehavior)
                    -> Result<gl::types::GLuint, DrawError>
 {
     // checking for compatibility
@@ -105,6 +111,6 @@ pub fn get_sampler(ctxt: &mut CommandContext, behavior: &SamplerBehavior)
     // builds a new sampler
     let sampler = SamplerObject::new(ctxt, behavior);
     let id = sampler.get_id();
-    ctxt.samplers.insert(behavior.clone(), sampler);
+    ctxt.samplers.insert(*behavior, sampler);
     Ok(id)
 }
