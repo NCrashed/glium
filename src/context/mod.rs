@@ -1,4 +1,5 @@
 //! Contains everything related to the interface between glium and the OpenGL implementation.
+extern crate backtrace;
 
 use crate::gl;
 
