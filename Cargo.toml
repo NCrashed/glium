@@ -42,7 +42,7 @@ optional = true
 [dependencies]
 memoffset = "0.6"
 takeable-option = "0.5"
-backtrace = { version = "0.3.2", default-features = false }
+backtrace = { version = "0.3.55", default-features = false }
 lazy_static = "1.0"
 smallvec = "1.0"
 fnv = "1.0.5"
